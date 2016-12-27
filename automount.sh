@@ -57,8 +57,8 @@
 #  /Users/${UserName}/Library/Keychains/login.keychain
 
 UserName="$(logname)"
-AutomountPL="/Users/${UserName}/Library/Preferences/it.niemetz.automount.plist"
-LoginKC="/Users/${UserName}/Library/Keychains/login.keychain"
+PLAutomount="/Users/${UserName}/Library/Preferences/it.niemetz.automount.plist"
+KCLogin="/Users/${UserName}/Library/Keychains/login.keychain"
 declare -i Idx=0
 declare -i Retry
 declare -i MaxRetry=30
@@ -70,16 +70,16 @@ function cleanup {
 
 trap 'cleanup' SIGHUP SIGINT SIGQUIT SIGTERM EXIT
 
-if [[ -s "${AutomountPL}" ]] && [[ -s "${LoginKC}" ]]; then
-  PLcommonacct="$(/usr/libexec/PlistBuddy -c "Print commonacct" "${AutomountPL}" 2>/dev/null)"
+if [[ -s "${PLAutomount}" ]] && [[ -s "${KCLogin}" ]]; then
+  PLcommonacct="$(/usr/libexec/PlistBuddy -c "Print commonacct" "${PLAutomount}" 2>/dev/null)"
   PLcommonacct="${PLcommonacct:-${UserName}}"
-  PLcommonopts="$(/usr/libexec/PlistBuddy -c "Print commonopts" "${AutomountPL}" 2>/dev/null)"
-  while /usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}" "${AutomountPL}" >/dev/null 2>&1; do
-    PLptcl="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:ptcl" "${AutomountPL}" 2>/dev/null)"
-    PLacct="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:acct" "${AutomountPL}" 2>/dev/null)"
+  PLcommonopts="$(/usr/libexec/PlistBuddy -c "Print commonopts" "${PLAutomount}" 2>/dev/null)"
+  while /usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}" "${PLAutomount}" >/dev/null 2>&1; do
+    PLptcl="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:ptcl" "${PLAutomount}" 2>/dev/null)"
+    PLacct="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:acct" "${PLAutomount}" 2>/dev/null)"
     PLacct="${PLacct:-${PLcommonacct}}"
-    PLsrvr="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:srvr" "${AutomountPL}" 2>/dev/null)"
-    PLshre="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:shre" "${AutomountPL}" 2>/dev/null)"
+    PLsrvr="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:srvr" "${PLAutomount}" 2>/dev/null)"
+    PLshre="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:shre" "${PLAutomount}" 2>/dev/null)"
     if [[ -n "${PLptcl}" && -n "${PLacct}" && -n "${PLsrvr}" && -n "${PLshre}" ]] && ! mount | egrep -s -q "^//${PLacct}@${PLsrvr}/${PLshre} on /Volumes/${PLshre} \(${PLptcl}fs,.*${UserName}\)$" 2>/dev/null; then
       Retry=0
       while ! ping -c 1 -t 1 -o -q "${PLsrvr}" >/dev/null 2>&1 && [[ ${Retry} -le ${MaxRetry} ]]; do
@@ -99,7 +99,7 @@ if [[ -s "${AutomountPL}" ]] && [[ -s "${LoginKC}" ]]; then
         -r "$(printf "%-4s" "${PLptcl}")" \
         -a "${PLacct}" \
         -l "${PLsrvr}" \
-        "${LoginKC}" 2>&1 |\
+        "${KCLogin}" 2>&1 |\
       awk '
       /password:/ {
         split($0, val, /: "/)
