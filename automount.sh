@@ -23,7 +23,7 @@
 #<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 #<plist version="1.0">
 #<dict>
-#	<key>Sharelist</key>
+#	<key>Mountlist</key>
 #	<array>
 #		<dict>
 #			<key>acct</key>
@@ -67,12 +67,15 @@ function cleanup {
 trap 'cleanup' SIGHUP SIGINT SIGQUIT SIGTERM EXIT
 
 if [[ -s "${AutomountPL}" ]] && [[ -s "${LoginKC}" ]]; then
-  while /usr/libexec/PlistBuddy -c "Print Sharelist:${Idx}" "${AutomountPL}" >/dev/null 2>&1; do
-    PLptcl="$(/usr/libexec/PlistBuddy -c "Print Sharelist:${Idx}:ptcl" "${AutomountPL}" 2>/dev/null)"
-    PLacct="$(/usr/libexec/PlistBuddy -c "Print Sharelist:${Idx}:acct" "${AutomountPL}" 2>/dev/null)"
-    PLacct="${PLacct:-${UserName}}"
-    PLsrvr="$(/usr/libexec/PlistBuddy -c "Print Sharelist:${Idx}:srvr" "${AutomountPL}" 2>/dev/null)"
-    PLshre="$(/usr/libexec/PlistBuddy -c "Print Sharelist:${Idx}:shre" "${AutomountPL}" 2>/dev/null)"
+  PLcommonacct="$(/usr/libexec/PlistBuddy -c "Print commonacct" "${AutomountPL}" 2>/dev/null)"
+  PLcommonacct="${PLcommonacct:-${UserName}}"
+  PLcommonopts="$(/usr/libexec/PlistBuddy -c "Print commonopts" "${AutomountPL}" 2>/dev/null)"
+  while /usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}" "${AutomountPL}" >/dev/null 2>&1; do
+    PLptcl="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:ptcl" "${AutomountPL}" 2>/dev/null)"
+    PLacct="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:acct" "${AutomountPL}" 2>/dev/null)"
+    PLacct="${PLacct:-${PLcommonacct}}"
+    PLsrvr="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:srvr" "${AutomountPL}" 2>/dev/null)"
+    PLshre="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:shre" "${AutomountPL}" 2>/dev/null)"
     if [[ -n "${PLptcl}" && -n "${PLacct}" && -n "${PLsrvr}" && -n "${PLshre}" ]] && ! mount | egrep -s -q "^//${PLacct}@${PLsrvr}/${PLshre} on /Volumes/${PLshre} \(${PLptcl}fs,.*${UserName}\)$" 2>/dev/null; then
       Retry=0
       while ! ping -c 1 -t 1 -o -q "${PLsrvr}" >/dev/null 2>&1 && [[ ${Retry} -le ${MaxRetry} ]]; do
@@ -112,7 +115,7 @@ if [[ -s "${AutomountPL}" ]] && [[ -s "${LoginKC}" ]]; then
         continue
       fi
     
-      mount_afp "${PLptcl}://${PLacct}:${KCpassword}@${PLsrvr}/${PLshre}" "/Volumes/${PLshre}" 2>/dev/null
+      mount -t ${PLptcl}${PLcommonopts:+ -o ${PLcommonopts}} "${PLptcl}://${PLacct}:${KCpassword}@${PLsrvr}/${PLshre}" "/Volumes/${PLshre}" 2>/dev/null
     fi
     ((Idx++))
   done
