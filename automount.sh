@@ -23,6 +23,10 @@
 #<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 #<plist version="1.0">
 #<dict>
+#	<key>commonacct</key>
+#	<string>COMMONACCT</string>
+#	<key>commonopts</key>
+#	<string>COMMONOPTS (nodev,nosuid)</string>
 #	<key>Mountlist</key>
 #	<array>
 #		<dict>
