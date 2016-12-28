@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 
-#/Users/${UserName}/Library/LaunchAgents/it.niemetz.automount.plist
+#/Users/${USERNAME}/Library/LaunchAgents/it.niemetz.automount.plist
 #<?xml version="1.0" encoding="UTF-8"?>
 #<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 #<plist version="1.0">
@@ -16,27 +16,33 @@
 #	<true/>
 #</dict>
 #</plist>
-#launchctl load /Users/${UserName}/Library/LaunchAgents/it.niemetz.automount.plist
+#launchctl load /Users/${USERNAME}/Library/LaunchAgents/it.niemetz.automount.plist
 
-#/Users/${UserName}/Library/Preferences/it.niemetz.automount.plist
+#/Users/${USERNAME}/Library/Preferences/it.niemetz.automount.plist
 #<?xml version="1.0" encoding="UTF-8"?>
 #<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 #<plist version="1.0">
 #<dict>
-#	<key>commonacct</key>
-#	<string>COMMONACCT</string>
-#	<key>commonopts</key>
-#	<string>COMMONOPTS (nodev,nosuid)</string>
+#	<key>CommonMaxRetryInSeconds</key>
+#	<integer>COMMONMAXRETRYINSECONDS (30)</integer>
+#	<key>CommonAccount</key>
+#	<string>COMMONACCOUNT</string>
+#	<key>CommonMountOptions</key>
+#	<string>COMMONMOUNTOPTIONS (nodev,nosuid)</string>
 #	<key>Mountlist</key>
 #	<array>
 #		<dict>
-#			<key>acct</key>
+#			<key>MaxRetryInSeconds</key>
+#			<integer>MAXRETRYINSECONDS</integer>
+#			<key>MountOptions</key>
+#			<string>MOUNTOPTIONS</string>
+#			<key>Account</key>
 #			<string>ACCOUNT</string>
-#			<key>ptcl</key>
+#			<key>Protocol</key>
 #			<string>PROTOCOL (afp/smb)</string>
-#			<key>shre</key>
+#			<key>Share</key>
 #			<string>SHARE</string>
-#			<key>srvr</key>
+#			<key>Server</key>
 #			<string>SERVER</string>
 #		</dict>
 #	</array>
@@ -54,41 +60,94 @@
 #  -T /System/Library/CoreServices/NetAuthAgent.app/Contents/MacOS/NetAuthSysAgent \
 #  -T /System/Library/CoreServices/NetAuthAgent.app \
 #  -T group://NetAuth \
-#  /Users/${UserName}/Library/Keychains/login.keychain
+#  /Users/${USERNAME}/Library/Keychains/login.keychain
 
-UserName="$(logname)"
-PLAutomount="/Users/${UserName}/Library/Preferences/it.niemetz.automount.plist"
-KCLogin="/Users/${UserName}/Library/Keychains/login.keychain"
+declare -r USERNAME="$(logname)"
+declare -r USERID="$(dscl . read /Users/${USERNAME} UniqueID | awk -F': ' '{ print $2 }')"
+declare -r USERHOME="$(dscl . read /Users/${USERNAME} NFSHomeDirectory | awk -F': ' '{ print $2 }')"
+PLAutomount="${USERHOME}/Library/Preferences/it.niemetz.automount.plist"
+KCLogin="${USERHOME}/Library/Keychains/login.keychain"
 declare -i Idx=0
-declare -i Retry
-declare -i MaxRetry=30
+declare -i Try
+declare -ir MAXRETRY=30
+declare -r MOUNTOPTIONS="nodev,nosuid"
+declare -a IfConfig=()
+declare -t DELIMITER="|"
+declare -t SUBDELIMITER=","
 
 function cleanup {
   unset KCpassword
   exit ${1}
 }
 
+function getIfConfig {
+  local _IfConfig=""
+  declare -i _Sleep=0
+
+  while [[ ( -z "${_IfConfig}" || "${_IPAddress}" =~ 169\. ) && ${_Sleep} -lt 10 ]]; do
+    sleep ${_Sleep}
+    ((_Sleep++))
+    _IfConfig="$(
+      while IFS="${DELIMITER}" read PORT DEVICE; do
+        /sbin/ifconfig ${DEVICE} 2>/dev/null |\
+        /usr/bin/awk -v DELIMITER="${DELIMITER}" \
+                     -v SUBDELIMITER="${SUBDELIMITER}" \
+                     -v Device="${DEVICE}" \
+                     -v Port="${PORT}" \
+          '
+          BEGIN {
+            inet=""
+            }
+          /inet / {
+            printf("%s%s%s%s%s%s", $2, SUBDELIMITER, Device, SUBDELIMITER, Port, DELIMITER)
+            }
+          '
+      done < <(/usr/sbin/networksetup -listnetworkserviceorder |\
+        /usr/bin/awk -v DELIMITER="${DELIMITER}" \
+          '
+          BEGIN {
+            FS=":|,"
+            OFS=DELIMITER
+            }
+          /Hardware Port.*(Ethernet|Wi-Fi)/ {
+            sub(/\)/, "", $NF)
+            print substr($2, 2), substr($4, 2)
+            }
+          '
+        ) |\
+        /usr/bin/sed "s/${DELIMITER}$//g"
+    )"
+  done
+  IFS="${DELIMITER}" read -ra IfConfig <<<"${_IfConfig}"
+}
+getIfConfig 
+IFS="${SUBDELIMITER}" read -ra IPAddress <<<"${IfConfig[0]}"
+
 trap 'cleanup' SIGHUP SIGINT SIGQUIT SIGTERM EXIT
 
 if [[ -s "${PLAutomount}" ]] && [[ -s "${KCLogin}" ]]; then
-  PLcommonacct="$(/usr/libexec/PlistBuddy -c "Print commonacct" "${PLAutomount}" 2>/dev/null)"
-  PLcommonacct="${PLcommonacct:-${UserName}}"
-  PLcommonopts="$(/usr/libexec/PlistBuddy -c "Print commonopts" "${PLAutomount}" 2>/dev/null)"
+  declare -i PLCommonMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print CommonMaxRetryInSeconds" "${PLAutomount}" 2>/dev/null)"
+  PLCommonMaxRetryInSeconds="${PLCommonMaxRetryInSeconds:-${MAXRETRY}}"
+  PLCommonMountOptions="$(/usr/libexec/PlistBuddy -c "Print CommonMountOptions" "${PLAutomount}" 2>/dev/null)"
+  PLCommonMountOptions="${PLCommonMountOptions:-${MOUNTOPTIONS}}"
+  PLCommonAccount="$(/usr/libexec/PlistBuddy -c "Print CommonAccount" "${PLAutomount}" 2>/dev/null)"
+  PLCommonAccount="${PLCommonAccount:-${USERNAME}}"
   while /usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}" "${PLAutomount}" >/dev/null 2>&1; do
-    PLptcl="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:ptcl" "${PLAutomount}" 2>/dev/null)"
-    PLacct="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:acct" "${PLAutomount}" 2>/dev/null)"
-    PLacct="${PLacct:-${PLcommonacct}}"
-    PLsrvr="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:srvr" "${PLAutomount}" 2>/dev/null)"
-    PLshre="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:shre" "${PLAutomount}" 2>/dev/null)"
-    if [[ -n "${PLptcl}" && -n "${PLacct}" && -n "${PLsrvr}" && -n "${PLshre}" ]] && ! mount | egrep -s -q "^//${PLacct}@${PLsrvr}/${PLshre} on /Volumes/${PLshre} \(${PLptcl}fs,.*${UserName}\)$" 2>/dev/null; then
-      Retry=0
-      while ! ping -c 1 -t 1 -o -q "${PLsrvr}" >/dev/null 2>&1 && [[ ${Retry} -le ${MaxRetry} ]]; do
-        if [[ ${Retry} -le ${MaxRetry} ]]; then
-          sleep 1
-          ((Retry++))
-        fi
+    PLMountOptions="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MountOptions" "${PLAutomount}" 2>/dev/null)"
+    PLMountOptions="${PLMountOptions:-${PLCommonMountOptions}}"
+    PLMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MaxRetryInSeconds" "${PLAutomount}" 2>/dev/null)"
+    PLMaxRetryInSeconds="${PLMaxRetryInSeconds:-${PLCommonMaxRetryInSeconds}}"
+    PLProtocol="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Protocol" "${PLAutomount}" 2>/dev/null)"
+    PLAccount="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Account" "${PLAutomount}" 2>/dev/null)"
+    PLAccount="${PLAccount:-${PLCommonAccount}}"
+    PLServer="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Server" "${PLAutomount}" 2>/dev/null)"
+    PLShare="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Share" "${PLAutomount}" 2>/dev/null)"
+    if [[ -n "${PLProtocol}" && -n "${PLAccount}" && -n "${PLServer}" && -n "${PLShare}" ]] && ! mount | egrep -s -q "^//${PLAccount}@${PLServer}/${PLShare} on /Volumes/${PLShare} \(${PLProtocol}fs,.*${USERNAME}\)$" 2>/dev/null; then
+      Try=0
+      while ! ping -c 1 -t 1 -o -q "${PLServer}" >/dev/null 2>&1 && [[ ${Try} -le ${PLMaxRetryInSeconds} ]]; do
+        ((Try++))
       done
-      if [[ ${Retry} -ge ${MaxRetry} ]]; then
+      if [[ ${Try} -gt ${PLMaxRetryInSeconds} ]]; then
         ((Idx++))
         continue
       fi
@@ -96,9 +155,9 @@ if [[ -s "${PLAutomount}" ]] && [[ -s "${KCLogin}" ]]; then
       if ! eval $(
       security find-internet-password \
         -g \
-        -r "$(printf "%-4s" "${PLptcl}")" \
-        -a "${PLacct}" \
-        -l "${PLsrvr}" \
+        -r "$(printf "%-4s" "${PLProtocol}")" \
+        -a "${PLAccount}" \
+        -l "${PLServer}" \
         "${KCLogin}" 2>&1 |\
       awk '
       /password:/ {
@@ -113,13 +172,13 @@ if [[ -s "${PLAutomount}" ]] && [[ -s "${KCLogin}" ]]; then
         continue
       fi
     
-      if [[ ! -d "/Volumes/${PLshre}" ]] && ! { mkdir -p "/Volumes/${PLshre}" && chown "${UserName}:staff" "/Volumes/${PLshre}"; } >/dev/null 2>&1;  then
-        rmdir "/Volumes/${PLshre}" >/dev/null 2>&1
+      if [[ ! -d "/Volumes/${PLShare}" ]] && ! { mkdir -p "/Volumes/${PLShare}" && chown "${USERNAME}:staff" "/Volumes/${PLShare}"; } >/dev/null 2>&1;  then
+        rmdir "/Volumes/${PLShare}" >/dev/null 2>&1
         ((Idx++))
         continue
       fi
     
-      mount -t ${PLptcl}${PLcommonopts:+ -o ${PLcommonopts}} "${PLptcl}://${PLacct}:${KCpassword}@${PLsrvr}/${PLshre}" "/Volumes/${PLshre}" 2>/dev/null
+      mount -t ${PLProtocol}${PLCommonMountOptions:+ -o ${PLCommonMountOptions}} "${PLProtocol}://${PLAccount}:${KCpassword}@${PLServer}/${PLShare}" "/Volumes/${PLShare}" 2>/dev/null
     fi
     ((Idx++))
   done
