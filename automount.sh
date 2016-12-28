@@ -125,7 +125,6 @@ function getIfConfig {
   IFS="${DELIMITER}" read -ra IfConfig <<<"${_IfConfig}"
 }
 getIfConfig 
-IFS="${SUBDELIMITER}" read -ra IPAddress <<<"${IfConfig[0]}"
 
 trap 'cleanup' SIGHUP SIGINT SIGQUIT SIGTERM EXIT
 
