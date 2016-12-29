@@ -207,3 +207,5 @@ if [[ -s "${PLAutomount}" ]] && [[ -s "${KCLogin}" ]]; then
 else
   exit 1
 fi
+
+osascript -e "display notification \"automount runned successfully.\" with title \"automount\" subtitle \"\" sound name \"Glass\""
