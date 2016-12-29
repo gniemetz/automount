@@ -74,7 +74,7 @@ KCLogin="${USERHOME}/Library/Keychains/login.keychain"
 declare -i Idx=0
 declare -i Try
 declare -i IsInValidRange=0
-declare -ir MAXRETRY=30
+declare -ir MAXRETRYINSECONDS=30
 declare -r MOUNTOPTIONS="nodev,nosuid"
 declare -a IfConfig=()
 declare -t DELIMITER="|"
@@ -131,7 +131,7 @@ trap 'cleanup' SIGHUP SIGINT SIGQUIT SIGTERM EXIT
 
 if [[ -s "${PLAutomount}" ]] && [[ -s "${KCLogin}" ]]; then
   declare -i PLCommonMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print CommonMaxRetryInSeconds" "${PLAutomount}" 2>/dev/null)"
-  PLCommonMaxRetryInSeconds="${PLCommonMaxRetryInSeconds:-${MAXRETRY}}"
+  PLCommonMaxRetryInSeconds="${PLCommonMaxRetryInSeconds:-${MAXRETRYINSECONDS}}"
   PLCommonValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print CommonValidIPRanges" "${PLAutomount}" 2>/dev/null)"
   PLCommonMountOptions="$(/usr/libexec/PlistBuddy -c "Print CommonMountOptions" "${PLAutomount}" 2>/dev/null)"
   PLCommonMountOptions="${PLCommonMountOptions:-${MOUNTOPTIONS}}"
