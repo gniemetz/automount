@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-
+set +xv
 
 #${USERHOME}/Library/LaunchAgents/it.niemetz.automount.plist
 #<?xml version="1.0" encoding="UTF-8"?>
@@ -40,14 +40,14 @@
 #			<string>VALIDIPRANGES (10.0.0,192.168.0)</string>
 #			<key>MountOptions</key>
 #			<string>MOUNTOPTIONS</string>
-#			<key>Account</key>
-#			<string>ACCOUNT</string>
 #			<key>Protocol</key>
 #			<string>PROTOCOL (afp/smb)</string>
-#			<key>Share</key>
-#			<string>SHARE</string>
+#			<key>Account</key>
+#			<string>ACCOUNT</string>
 #			<key>Server</key>
 #			<string>SERVER</string>
+#			<key>Share</key>
+#			<string>SHARE</string>
 #		</dict>
 #	</array>
 #</dict>
@@ -64,7 +64,7 @@
 #  -T /System/Library/CoreServices/NetAuthAgent.app/Contents/MacOS/NetAuthSysAgent \
 #  -T /System/Library/CoreServices/NetAuthAgent.app \
 #  -T group://NetAuth \
-#  /Users/${USERNAME}/Library/Keychains/login.keychain
+#  ${USERHOME}/Library/Keychains/login.keychain
 
 declare -r USERNAME="$(logname)"
 declare -r USERID="$(dscl . read /Users/${USERNAME} UniqueID | awk -F': ' '{ print $2 }')"
@@ -89,7 +89,7 @@ function getIfConfig {
   local _IfConfig=""
   declare -i _Sleep=0
 
-  while [[ ( -z "${_IfConfig}" || "${_IPAddress}" =~ 169\. ) && ${_Sleep} -lt 10 ]]; do
+  while [[ ( -z "${_IfConfig}" || "${_IfConfig}" =~ ^169\.[0-9]+\.[0-9]+\.[0-9]+, ) && ${_Sleep} -lt 10 ]]; do
     sleep ${_Sleep}
     ((_Sleep++))
     _IfConfig="$(
