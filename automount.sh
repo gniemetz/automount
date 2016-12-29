@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 
-#/Users/${USERNAME}/Library/LaunchAgents/it.niemetz.automount.plist
+#${USERHOME}/Library/LaunchAgents/it.niemetz.automount.plist
 #<?xml version="1.0" encoding="UTF-8"?>
 #<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 #<plist version="1.0">
@@ -16,9 +16,9 @@
 #	<true/>
 #</dict>
 #</plist>
-#launchctl load /Users/${USERNAME}/Library/LaunchAgents/it.niemetz.automount.plist
+#launchctl load ${USERHOME}/Library/LaunchAgents/it.niemetz.automount.plist
 
-#/Users/${USERNAME}/Library/Preferences/it.niemetz.automount.plist
+#${USERHOME}/Library/Preferences/it.niemetz.automount.plist
 #<?xml version="1.0" encoding="UTF-8"?>
 #<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 #<plist version="1.0">
