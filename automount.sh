@@ -10,12 +10,14 @@ set +xv
 #	<string>it.niemetz.automount</string>
 #	<key>ProgramArguments</key>
 #	<array>
-#		<string>/Users/Shared/automount.sh</string>
+#		<string>/usr/local/bin/automount.sh</string>
 #	</array>
 #	<key>RunAtLoad</key>
 #	<true/>
 #</dict>
 #</plist>
+#chown ${USERNAME}:staff ${USERHOME}/Library/LaunchAgents/it.niemetz.automount.plist
+#chmod 644 ${USERHOME}/Library/LaunchAgents/it.niemetz.automount.plist
 #launchctl load ${USERHOME}/Library/LaunchAgents/it.niemetz.automount.plist
 
 #${USERHOME}/Library/Preferences/it.niemetz.automount.plist
@@ -52,6 +54,8 @@ set +xv
 #	</array>
 #</dict>
 #</plist>
+#chown ${USERNAME}:staff ${USERHOME}/Library/Preferences/it.niemetz.automount.plist
+#chmod 644 ${USERHOME}/Library/Preferences/it.niemetz.automount.plist
 
 #security add-internet-password \
 #  -a ACCOUNT \
@@ -65,6 +69,10 @@ set +xv
 #  -T /System/Library/CoreServices/NetAuthAgent.app \
 #  -T group://NetAuth \
 #  ${USERHOME}/Library/Keychains/login.keychain
+
+#/usr/local/bin/automount.sh
+#chown root:admin /usr/local/bin/automount.sh
+#chmod 755 /usr/local/bin/automount.sh
 
 declare -r USERNAME="$(logname)"
 declare -r USERID="$(dscl . read /Users/${USERNAME} UniqueID | awk -F': ' '{ print $2 }')"
