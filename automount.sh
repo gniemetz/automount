@@ -154,6 +154,7 @@ function getIPAddresses {
 				}
 				$1 == "inet" && device != "" {
 					output=sprintf("%s%s", (output == "" ? "" : output " "), $2)
+					device=""
 					next
 				}
 				END {
