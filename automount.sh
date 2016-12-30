@@ -58,17 +58,17 @@ set +xv
 #chmod 644 ${USERHOME}/Library/Preferences/it.niemetz.automount.plist
 
 #security add-internet-password \
-#  -a ACCOUNT \
-#  -l LABEL (eg. same as SERVER) \
-#  -D DESCRIPTION (eg. Networkpassword) \
-#  -r PROTOCOL ("afp "/"smb ") \
-#  -s SERVER \
-#  -w PASSWORD \
-#  -T /usr/bin/security \
-#  -T /System/Library/CoreServices/NetAuthAgent.app/Contents/MacOS/NetAuthSysAgent \
-#  -T /System/Library/CoreServices/NetAuthAgent.app \
-#  -T group://NetAuth \
-#  ${USERHOME}/Library/Keychains/login.keychain
+#	-a ACCOUNT \
+#	-l LABEL (eg. same as SERVER) \
+#	-D DESCRIPTION (eg. Networkpassword) \
+#	-r PROTOCOL ("afp "/"smb ") \
+#	-s SERVER \
+#	-w PASSWORD \
+#	-T /usr/bin/security \
+#	-T /System/Library/CoreServices/NetAuthAgent.app/Contents/MacOS/NetAuthSysAgent \
+#	-T /System/Library/CoreServices/NetAuthAgent.app \
+#	-T group://NetAuth \
+#	${USERHOME}/Library/Keychains/login.keychain
 
 #/usr/local/bin/automount.sh
 #chown root:admin /usr/local/bin/automount.sh
@@ -89,131 +89,131 @@ declare -t DELIMITER="|"
 declare -t SUBDELIMITER=","
 
 function cleanup {
-  unset KCpassword
-  exit ${1}
+	unset KCpassword
+	exit ${1}
 }
 
 function getIfConfig {
-  local _IfConfig=""
-  declare -i _Sleep=0
+	local _IfConfig=""
+	declare -i _Sleep=0
 
-  while [[ ( -z "${_IfConfig}" || "${_IfConfig}" =~ ^169\.[0-9]+\.[0-9]+\.[0-9]+, ) && ${_Sleep} -lt 10 ]]; do
-    sleep ${_Sleep}
-    ((_Sleep++))
-    _IfConfig="$(
-      while IFS="${DELIMITER}" read PORT DEVICE; do
-        /sbin/ifconfig ${DEVICE} 2>/dev/null |\
-        /usr/bin/awk -v DELIMITER="${DELIMITER}" \
-                     -v SUBDELIMITER="${SUBDELIMITER}" \
-                     -v Device="${DEVICE}" \
-                     -v Port="${PORT}" \
-          '
-          BEGIN {
-            inet=""
-            }
-          /inet / {
-            printf("%s%s%s%s%s%s", $2, SUBDELIMITER, Device, SUBDELIMITER, Port, DELIMITER)
-            }
-          '
-      done < <(/usr/sbin/networksetup -listnetworkserviceorder |\
-        /usr/bin/awk -v DELIMITER="${DELIMITER}" \
-          '
-          BEGIN {
-            FS=":|,"
-            OFS=DELIMITER
-            }
-          /Hardware Port.*(Ethernet|Wi-Fi)/ {
-            sub(/\)/, "", $NF)
-            print substr($2, 2), substr($4, 2)
-            }
-          '
-        ) |\
-        /usr/bin/sed "s/${DELIMITER}$//g"
-    )"
-  done
-  IFS="${DELIMITER}" read -ra IfConfig <<<"${_IfConfig}"
+	while [[ ( -z "${_IfConfig}" || "${_IfConfig}" =~ ^169\.[0-9]+\.[0-9]+\.[0-9]+, ) && ${_Sleep} -lt 10 ]]; do
+		sleep ${_Sleep}
+		((_Sleep++))
+		_IfConfig="$(
+			while IFS="${DELIMITER}" read PORT DEVICE; do
+				/sbin/ifconfig ${DEVICE} 2>/dev/null |\
+				/usr/bin/awk -v DELIMITER="${DELIMITER}" \
+										 -v SUBDELIMITER="${SUBDELIMITER}" \
+										 -v Device="${DEVICE}" \
+										 -v Port="${PORT}" \
+					'
+					BEGIN {
+						inet=""
+						}
+					/inet / {
+						printf("%s%s%s%s%s%s", $2, SUBDELIMITER, Device, SUBDELIMITER, Port, DELIMITER)
+						}
+					'
+			done < <(/usr/sbin/networksetup -listnetworkserviceorder |\
+				/usr/bin/awk -v DELIMITER="${DELIMITER}" \
+					'
+					BEGIN {
+						FS=":|,"
+						OFS=DELIMITER
+						}
+					/Hardware Port.*(Ethernet|Wi-Fi)/ {
+						sub(/\)/, "", $NF)
+						print substr($2, 2), substr($4, 2)
+						}
+					'
+				) |\
+				/usr/bin/sed "s/${DELIMITER}$//g"
+		)"
+	done
+	IFS="${DELIMITER}" read -ra IfConfig <<<"${_IfConfig}"
 }
 getIfConfig 
 
 trap 'cleanup' SIGHUP SIGINT SIGQUIT SIGTERM EXIT
 
 if [[ -s "${PLAutomount}" ]] && [[ -s "${KCLogin}" ]]; then
-  declare -i PLCommonMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print CommonMaxRetryInSeconds" "${PLAutomount}" 2>/dev/null)"
-  PLCommonMaxRetryInSeconds="${PLCommonMaxRetryInSeconds:-${MAXRETRYINSECONDS}}"
-  PLCommonValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print CommonValidIPRanges" "${PLAutomount}" 2>/dev/null)"
-  PLCommonMountOptions="$(/usr/libexec/PlistBuddy -c "Print CommonMountOptions" "${PLAutomount}" 2>/dev/null)"
-  PLCommonMountOptions="${PLCommonMountOptions:-${MOUNTOPTIONS}}"
-  PLCommonAccount="$(/usr/libexec/PlistBuddy -c "Print CommonAccount" "${PLAutomount}" 2>/dev/null)"
-  PLCommonAccount="${PLCommonAccount:-${USERNAME}}"
-  while /usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}" "${PLAutomount}" >/dev/null 2>&1; do
-    PLValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:ValidIPRanges" "${PLAutomount}" 2>/dev/null)"
-    PLValidIPRanges="${PLValidIPRanges:-${PLCommonValidIPRanges}}"
-    PLMountOptions="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MountOptions" "${PLAutomount}" 2>/dev/null)"
-    PLMountOptions="${PLMountOptions:-${PLCommonMountOptions}}"
-    PLMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MaxRetryInSeconds" "${PLAutomount}" 2>/dev/null)"
-    PLMaxRetryInSeconds="${PLMaxRetryInSeconds:-${PLCommonMaxRetryInSeconds}}"
-    PLProtocol="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Protocol" "${PLAutomount}" 2>/dev/null)"
-    PLAccount="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Account" "${PLAutomount}" 2>/dev/null)"
-    PLAccount="${PLAccount:-${PLCommonAccount}}"
-    PLServer="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Server" "${PLAutomount}" 2>/dev/null)"
-    PLShare="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Share" "${PLAutomount}" 2>/dev/null)"
-    if [[ -n "${PLProtocol}" && -n "${PLAccount}" && -n "${PLServer}" && -n "${PLShare}" ]] && ! mount | egrep -s -q "^//${PLAccount}@${PLServer}/${PLShare} on /Volumes/${PLShare} \(${PLProtocol}fs,.*${USERNAME}\)$" 2>/dev/null; then
-      if [[ -n "${PLValidIPRanges}" ]]; then
-        IsInValidRange=1
-        for _IfConfig in "${IfConfig[@]}"; do
-          IFS="${SUBDELIMITER}" read -ra _IfConfigValues<<<"${_IfConfig}"
-          if [[ ${#_IfConfigValues[@]} -ne 0 ]]; then
-            _IPAddressPart="$(echo "${_IfConfigValues[0]}" | cut -d'.' -f1-3)"
-            if [[ "${PLValidIPRanges}" =~ (^|,)"${_IPAddressPart}"(,|$) ]]; then
-              IsInValidRange=0
-            fi
-          fi
-        done
-      fi
+	declare -i PLCommonMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print CommonMaxRetryInSeconds" "${PLAutomount}" 2>/dev/null)"
+	PLCommonMaxRetryInSeconds="${PLCommonMaxRetryInSeconds:-${MAXRETRYINSECONDS}}"
+	PLCommonValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print CommonValidIPRanges" "${PLAutomount}" 2>/dev/null)"
+	PLCommonMountOptions="$(/usr/libexec/PlistBuddy -c "Print CommonMountOptions" "${PLAutomount}" 2>/dev/null)"
+	PLCommonMountOptions="${PLCommonMountOptions:-${MOUNTOPTIONS}}"
+	PLCommonAccount="$(/usr/libexec/PlistBuddy -c "Print CommonAccount" "${PLAutomount}" 2>/dev/null)"
+	PLCommonAccount="${PLCommonAccount:-${USERNAME}}"
+	while /usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}" "${PLAutomount}" >/dev/null 2>&1; do
+		PLValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:ValidIPRanges" "${PLAutomount}" 2>/dev/null)"
+		PLValidIPRanges="${PLValidIPRanges:-${PLCommonValidIPRanges}}"
+		PLMountOptions="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MountOptions" "${PLAutomount}" 2>/dev/null)"
+		PLMountOptions="${PLMountOptions:-${PLCommonMountOptions}}"
+		PLMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MaxRetryInSeconds" "${PLAutomount}" 2>/dev/null)"
+		PLMaxRetryInSeconds="${PLMaxRetryInSeconds:-${PLCommonMaxRetryInSeconds}}"
+		PLProtocol="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Protocol" "${PLAutomount}" 2>/dev/null)"
+		PLAccount="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Account" "${PLAutomount}" 2>/dev/null)"
+		PLAccount="${PLAccount:-${PLCommonAccount}}"
+		PLServer="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Server" "${PLAutomount}" 2>/dev/null)"
+		PLShare="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Share" "${PLAutomount}" 2>/dev/null)"
+		if [[ -n "${PLProtocol}" && -n "${PLAccount}" && -n "${PLServer}" && -n "${PLShare}" ]] && ! mount | egrep -s -q "^//${PLAccount}@${PLServer}/${PLShare} on /Volumes/${PLShare} \(${PLProtocol}fs,.*${USERNAME}\)$" 2>/dev/null; then
+			if [[ -n "${PLValidIPRanges}" ]]; then
+				IsInValidRange=1
+				for _IfConfig in "${IfConfig[@]}"; do
+					IFS="${SUBDELIMITER}" read -ra _IfConfigValues<<<"${_IfConfig}"
+					if [[ ${#_IfConfigValues[@]} -ne 0 ]]; then
+						_IPAddressPart="$(echo "${_IfConfigValues[0]}" | cut -d'.' -f1-3)"
+						if [[ "${PLValidIPRanges}" =~ (^|,)"${_IPAddressPart}"(,|$) ]]; then
+							IsInValidRange=0
+						fi
+					fi
+				done
+			fi
 
-      if [[ ${IsInValidRange} -eq 0 ]]; then
-        Try=0
-        while ! ping -c 1 -t 1 -o -q "${PLServer}" >/dev/null 2>&1 && [[ ${Try} -le ${PLMaxRetryInSeconds} ]]; do
-          ((Try++))
-        done
-        if [[ ${Try} -gt ${PLMaxRetryInSeconds} ]]; then
-          ((Idx++))
-          continue
-        fi
-        
-        if ! eval $(
-        security find-internet-password \
-          -g \
-          -r "$(printf "%-4s" "${PLProtocol}")" \
-          -a "${PLAccount}" \
-          -l "${PLServer}" \
-          "${KCLogin}" 2>&1 |\
-        awk '
-        /password:/ {
-          split($0, val, /: "/)
-          val[2]=substr(val[2], 1, length(val[2])-1)
-          gsub(/"/, "\\\"", val[2])
-          printf("KC%s=\"%s\"\n", val[1], val[2])
-        }
-        '
-        ); then
-          ((Idx++))
-          continue
-        fi
-            
-        if [[ ! -d "/Volumes/${PLShare}" ]] && ! { mkdir -p "/Volumes/${PLShare}" && chown "${USERNAME}:staff" "/Volumes/${PLShare}"; } >/dev/null 2>&1;  then
-          rmdir "/Volumes/${PLShare}" >/dev/null 2>&1
-          ((Idx++))
-          continue
-        fi
-            
-        mount -t ${PLProtocol}${PLCommonMountOptions:+ -o ${PLCommonMountOptions}} "${PLProtocol}://${PLAccount}:${KCpassword}@${PLServer}/${PLShare}" "/Volumes/${PLShare}" 2>/dev/null
-      fi
-    fi
-    ((Idx++))
-  done
+			if [[ ${IsInValidRange} -eq 0 ]]; then
+				Try=0
+				while ! ping -c 1 -t 1 -o -q "${PLServer}" >/dev/null 2>&1 && [[ ${Try} -le ${PLMaxRetryInSeconds} ]]; do
+					((Try++))
+				done
+				if [[ ${Try} -gt ${PLMaxRetryInSeconds} ]]; then
+					((Idx++))
+					continue
+				fi
+				
+				if ! eval $(
+				security find-internet-password \
+					-g \
+					-r "$(printf "%-4s" "${PLProtocol}")" \
+					-a "${PLAccount}" \
+					-l "${PLServer}" \
+					"${KCLogin}" 2>&1 |\
+				awk '
+				/password:/ {
+					split($0, val, /: "/)
+					val[2]=substr(val[2], 1, length(val[2])-1)
+					gsub(/"/, "\\\"", val[2])
+					printf("KC%s=\"%s\"\n", val[1], val[2])
+				}
+				'
+				); then
+					((Idx++))
+					continue
+				fi
+						
+				if [[ ! -d "/Volumes/${PLShare}" ]] && ! { mkdir -p "/Volumes/${PLShare}" && chown "${USERNAME}:staff" "/Volumes/${PLShare}"; } >/dev/null 2>&1;	then
+					rmdir "/Volumes/${PLShare}" >/dev/null 2>&1
+					((Idx++))
+					continue
+				fi
+						
+				mount -t ${PLProtocol}${PLCommonMountOptions:+ -o ${PLCommonMountOptions}} "${PLProtocol}://${PLAccount}:${KCpassword}@${PLServer}/${PLShare}" "/Volumes/${PLShare}" 2>/dev/null
+			fi
+		fi
+		((Idx++))
+	done
 else
-  exit 1
+	exit 1
 fi
 
 osascript -e "display notification \"automount runned successfully.\" with title \"automount\" subtitle \"\" sound name \"Glass\""
