@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set +xv
+#set +xv
 
 #${USERHOME}/Library/LaunchAgents/it.niemetz.automount.plist
 #<?xml version="1.0" encoding="UTF-8"?>
@@ -122,7 +122,7 @@ function getIfConfig {
 						FS=":|,"
 						OFS=DELIMITER
 					}
-					/Hardware Port.*(Ethernet|Wi-Fi)/ {
+					/Hardware Port.*(Ethernet|Wi-Fi|IPSec)/ {
 						sub(/\)/, "", $NF)
 						print substr($2, 2), substr($4, 2)
 					}
@@ -133,7 +133,39 @@ function getIfConfig {
 	done
 	IFS="${DELIMITER}" read -ra IfConfig <<<"${_IfConfig}"
 }
-getIfConfig 
+
+function getIPAddresses {
+	local _IPAddresses=""
+	declare -i _Sleep=0
+
+	while [[ ( -z "${_IPAddresses}" || "${_IPAddresses}" =~ (^| )169\.[0-9]+\.[0-9]+\.[0-9]+( |$) ) && ${_Sleep} -lt 10 ]]; do
+		sleep ${_Sleep}
+		((_Sleep++))
+		_IPAddresses="$(
+			/sbin/ifconfig |\
+			/usr/bin/awk \
+				'
+				BEGIN {
+					device=""
+				}
+				/(^en[0-9]*:|^utun[0-9]*).*UP.*RUNNING/ {
+					device=$1
+					next
+				}
+				$1 == "inet" && device != "" {
+					output=sprintf("%s%s", (output == "" ? "" : output " "), $2)
+					next
+				}
+				END {
+					print output
+				}
+				'
+		)"
+	done
+	echo "${_IPAddresses}"
+}
+
+IPAddresses=( $(getIPAddresses) )
 
 trap 'cleanup' SIGHUP SIGINT SIGQUIT SIGTERM EXIT
 
@@ -160,13 +192,11 @@ if [[ -s "${PLAutomount}" ]] && [[ -s "${KCLogin}" ]]; then
 		if [[ -n "${PLProtocol}" && -n "${PLAccount}" && -n "${PLServer}" && -n "${PLShare}" ]] && ! mount | egrep -s -q "^//${PLAccount}@${PLServer}/${PLShare} on /Volumes/${PLShare} \(${PLProtocol}fs,.*${USERNAME}\)$" 2>/dev/null; then
 			if [[ -n "${PLValidIPRanges}" ]]; then
 				IsInValidRange=1
-				for _IfConfig in "${IfConfig[@]}"; do
-					IFS="${SUBDELIMITER}" read -ra _IfConfigValues<<<"${_IfConfig}"
-					if [[ ${#_IfConfigValues[@]} -ne 0 ]]; then
-						_IPAddressPart="$(echo "${_IfConfigValues[0]}" | cut -d'.' -f1-3)"
-						if [[ "${PLValidIPRanges}" =~ (^|,)"${_IPAddressPart}"(,|$) ]]; then
-							IsInValidRange=0
-						fi
+				for IPAddress in "${IPAddresses[@]}"; do
+					IPAddressPart="$(echo "${IPAddress}" | cut -d'.' -f1-3)"
+					if [[ "${PLValidIPRanges}" =~ (^|,)"${IPAddressPart}"(,|$) ]]; then
+						IsInValidRange=0
+						break
 					fi
 				done
 			fi
