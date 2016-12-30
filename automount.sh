@@ -104,16 +104,16 @@ function getIfConfig {
 			while IFS="${DELIMITER}" read PORT DEVICE; do
 				/sbin/ifconfig ${DEVICE} 2>/dev/null |\
 				/usr/bin/awk -v DELIMITER="${DELIMITER}" \
-										 -v SUBDELIMITER="${SUBDELIMITER}" \
-										 -v Device="${DEVICE}" \
-										 -v Port="${PORT}" \
+					-v SUBDELIMITER="${SUBDELIMITER}" \
+					-v Device="${DEVICE}" \
+					-v Port="${PORT}" \
 					'
 					BEGIN {
 						inet=""
-						}
+					}
 					/inet / {
 						printf("%s%s%s%s%s%s", $2, SUBDELIMITER, Device, SUBDELIMITER, Port, DELIMITER)
-						}
+					}
 					'
 			done < <(/usr/sbin/networksetup -listnetworkserviceorder |\
 				/usr/bin/awk -v DELIMITER="${DELIMITER}" \
@@ -121,11 +121,11 @@ function getIfConfig {
 					BEGIN {
 						FS=":|,"
 						OFS=DELIMITER
-						}
+					}
 					/Hardware Port.*(Ethernet|Wi-Fi)/ {
 						sub(/\)/, "", $NF)
 						print substr($2, 2), substr($4, 2)
-						}
+					}
 					'
 				) |\
 				/usr/bin/sed "s/${DELIMITER}$//g"
