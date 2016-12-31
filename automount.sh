@@ -74,69 +74,47 @@
 #chown root:admin /usr/local/bin/automount.sh
 #chmod 755 /usr/local/bin/automount.sh
 
+if Output_pgrep="$(pgrep -f -l "${0##*/}")"; then
+    echo "${Output_pgrep}"
+    exit 1
+fi
+
+# CONSTANTS
+SCRIPTPATH="${0%/*}"
+if [[ "${SCRIPTPATH}" == "." ]]; then
+    SCRIPTPATH="${PWD}"
+elif [[ "${SCRIPTPATH:0:1}" != "/" ]]; then
+    SCRIPTPATH="$(which ${0})"
+fi
+declare -r SCRIPTFILENAME="${0##*/}"
+SCRIPTNAME="${SCRIPTFILENAME%.*}"
+SCRIPTEXTENSION=${SCRIPTFILENAME##*.}
+if [[ "${SCRIPTNAME}" == "" ]]; then
+    SCRIPTNAME=".${SCRIPTEXTENSION}"
+    SCRIPTEXTENSION=""
+fi
+declare -r SCRIPTPATH SCRIPTNAME SCRIPTEXTENSION
 declare -r USERNAME="$(logname)"
 declare -r USERID="$(dscl . read /Users/${USERNAME} UniqueID | awk -F': ' '{ print $2 }')"
 declare -r USERHOME="$(dscl . read /Users/${USERNAME} NFSHomeDirectory | awk -F': ' '{ print $2 }')"
-PLAutomount="${USERHOME}/Library/Preferences/it.niemetz.automount.plist"
-KCLogin="${USERHOME}/Library/Keychains/login.keychain"
+declare -r PLAutomount="${USERHOME}/Library/Preferences/it.niemetz.automount.plist"
+declare -r KCLogin="${USERHOME}/Library/Keychains/login.keychain"
+declare -ir MAXRETRYINSECONDS=30
+declare -r MOUNTOPTIONS="nodev,nosuid"
+# Variables
 declare -i Idx=0
 declare -i Try
 declare -i IsInValidRange=0
-declare -ir MAXRETRYINSECONDS=30
-declare -r MOUNTOPTIONS="nodev,nosuid"
-declare -a IfConfig=()
-declare -t DELIMITER="|"
-declare -t SUBDELIMITER=","
+declare -a IPAddresses=()
 
 function cleanup {
 	unset KCpassword
 	exit ${1}
 }
 
-function getIfConfig {
-	local _IfConfig=""
-	declare -i _Sleep=0
-
-	while [[ ( -z "${_IfConfig}" || "${_IfConfig}" =~ ^169\.[0-9]+\.[0-9]+\.[0-9]+, ) && ${_Sleep} -lt 10 ]]; do
-		sleep ${_Sleep}
-		((_Sleep++))
-		_IfConfig="$(
-			while IFS="${DELIMITER}" read PORT DEVICE; do
-				/sbin/ifconfig ${DEVICE} 2>/dev/null |\
-				/usr/bin/awk -v DELIMITER="${DELIMITER}" \
-					-v SUBDELIMITER="${SUBDELIMITER}" \
-					-v Device="${DEVICE}" \
-					-v Port="${PORT}" \
-					'
-					BEGIN {
-						inet=""
-					}
-					/inet / {
-						printf("%s%s%s%s%s%s", $2, SUBDELIMITER, Device, SUBDELIMITER, Port, DELIMITER)
-					}
-					'
-			done < <(/usr/sbin/networksetup -listnetworkserviceorder |\
-				/usr/bin/awk -v DELIMITER="${DELIMITER}" \
-					'
-					BEGIN {
-						FS=":|,"
-						OFS=DELIMITER
-					}
-					/Hardware Port.*(Ethernet|Wi-Fi|IPSec)/ {
-						sub(/\)/, "", $NF)
-						print substr($2, 2), substr($4, 2)
-					}
-					'
-				) |\
-				/usr/bin/sed "s/${DELIMITER}$//g"
-		)"
-	done
-	IFS="${DELIMITER}" read -ra IfConfig <<<"${_IfConfig}"
-}
-
 function getIPAddresses {
 	local _IPAddresses=""
-	declare -i _Sleep=0
+	local -i _Sleep=0
 
 	while [[ ( -z "${_IPAddresses}" || "${_IPAddresses}" =~ (^| )169\.[0-9]+\.[0-9]+\.[0-9]+( |$) ) && ${_Sleep} -lt 10 ]]; do
 		sleep ${_Sleep}
@@ -247,4 +225,4 @@ else
 	exit 1
 fi
 
-osascript -e "display notification \"automount runned successfully.\" with title \"automount\" subtitle \"\" sound name \"Glass\""
+osascript -e "display notification \"automount runned successfully.\" with title \"automount\" subtitle \"\""
