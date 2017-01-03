@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-set +xv
+DEBUG="false"
+if [ "${DEBUG}" == false ]; then
+    set +xv
+    ExpectDebug="log_user 0"
+fi
 
 #${USERHOME}/Library/LaunchAgents/it.niemetz.automount.plist
 #<?xml version="1.0" encoding="UTF-8"?>
@@ -173,7 +177,7 @@ if [ -s "${PLAutomount}" ] && [ -s "${KCLogin}" ]; then
 		PLServer="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Server" "${PLAutomount}" 2>/dev/null)"
 		PLShare="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Share" "${PLAutomount}" 2>/dev/null)"
 		#if [[ -n "${PLProtocol}" && -n "${PLAccount}" && -n "${PLServer}" && -n "${PLShare}" ]] && ! mount | egrep -s -q "^//${PLAccount}@${PLServer}/${PLShare} on /Volumes/${PLShare} \(${PLProtocol}fs,.*${USERNAME}\)$" 2>/dev/null; then
-		if [[ -n "${PLProtocol}" && -n "${PLAccount}" && -n "${PLServer}" && -n "${PLShare}" ]] && ! mount | egrep -s -q "^//.*${PLServer}/${PLShare} on /Volumes/${PLShare} \(.*, mounted by ${USERNAME}\)$" 2>/dev/null; then
+        if [[ -n "${PLProtocol}" && -n "${PLAccount}" && -n "${PLServer}" && -n "${PLShare}" ]] && ! mount | egrep -s -q "//.*${PLServer}/(${PLShare})? on /Volumes/${PLShare} \(.*, mounted by ${USERNAME}\)$" 2>/dev/null; then
 			if [ -n "${PLValidIPRanges}" ]; then
 				IsInValidRange=1
 				for IPAddress in "${IPAddresses[@]}"; do
@@ -225,7 +229,7 @@ if [ -s "${PLAutomount}" ] && [ -s "${KCLogin}" ]; then
                     "https")
                         RV="$(expect -c '
                             set timeout 15
-                            log_user 0
+                            '"${ExpectDebug}"'
                             spawn /sbin/mount_webdav -s -i'"${PLMountOptions:+ -o ${PLMountOptions}}"' '"${PLProtocol}"'://'"${PLServer}"' /Volumes/'"${PLShare}"'
                             expect "name:" {
                                 send "'"${PLAccount}"'\r"
