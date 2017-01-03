@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#set +xv
+set +xv
 
 #${USERHOME}/Library/LaunchAgents/it.niemetz.automount.plist
 #<?xml version="1.0" encoding="UTF-8"?>
@@ -43,7 +43,7 @@
 #			<key>MountOptions</key>
 #			<string>MOUNTOPTIONS</string>
 #			<key>Protocol</key>
-#			<string>PROTOCOL (afp/smb)</string>
+#			<string>PROTOCOL (afp/smb/https)</string>
 #			<key>Account</key>
 #			<string>ACCOUNT</string>
 #			<key>Server</key>
@@ -61,10 +61,11 @@
 #	-a ACCOUNT \
 #	-l LABEL (eg. same as SERVER) \
 #	-D DESCRIPTION (eg. Networkpassword) \
-#	-r PROTOCOL ("afp "/"smb ") \
+#	-r PROTOCOL ("afp "/"smb "/"htps") \
 #	-s SERVER \
 #	-w PASSWORD \
 #	-T /usr/bin/security \
+#   -T /System/Library/Extensions/webdav_fs.kext/Contents/Resources/webdavfs_agent \
 #	-T /System/Library/CoreServices/NetAuthAgent.app/Contents/MacOS/NetAuthSysAgent \
 #	-T /System/Library/CoreServices/NetAuthAgent.app \
 #	-T group://NetAuth \
@@ -81,15 +82,15 @@ fi
 
 # CONSTANTS
 SCRIPTPATH="${0%/*}"
-if [[ "${SCRIPTPATH}" == "." ]]; then
+if [ "${SCRIPTPATH}" == "." ]; then
     SCRIPTPATH="${PWD}"
-elif [[ "${SCRIPTPATH:0:1}" != "/" ]]; then
+elif [ "${SCRIPTPATH:0:1}" != "/" ]; then
     SCRIPTPATH="$(which ${0})"
 fi
 declare -r SCRIPTFILENAME="${0##*/}"
 SCRIPTNAME="${SCRIPTFILENAME%.*}"
 SCRIPTEXTENSION=${SCRIPTFILENAME##*.}
-if [[ "${SCRIPTNAME}" == "" ]]; then
+if [ "${SCRIPTNAME}" == "" ]; then
     SCRIPTNAME=".${SCRIPTEXTENSION}"
     SCRIPTEXTENSION=""
 fi
@@ -101,6 +102,9 @@ declare -r PLAutomount="${USERHOME}/Library/Preferences/it.niemetz.automount.pli
 declare -r KCLogin="${USERHOME}/Library/Keychains/login.keychain"
 declare -ir MAXRETRYINSECONDS=30
 declare -r MOUNTOPTIONS="nodev,nosuid"
+declare -r Ptcl_afp="afp "
+declare -r Ptcl_smb="smb "
+declare -r Ptcl_https="htps"
 # Variables
 declare -i Idx=0
 declare -i Try
@@ -148,7 +152,7 @@ IPAddresses=( $(getIPAddresses) )
 
 trap 'cleanup' SIGHUP SIGINT SIGQUIT SIGTERM EXIT
 
-if [[ -s "${PLAutomount}" ]] && [[ -s "${KCLogin}" ]]; then
+if [ -s "${PLAutomount}" ] && [ -s "${KCLogin}" ]; then
 	declare -i PLCommonMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print CommonMaxRetryInSeconds" "${PLAutomount}" 2>/dev/null)"
 	PLCommonMaxRetryInSeconds="${PLCommonMaxRetryInSeconds:-${MAXRETRYINSECONDS}}"
 	PLCommonValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print CommonValidIPRanges" "${PLAutomount}" 2>/dev/null)"
@@ -168,8 +172,9 @@ if [[ -s "${PLAutomount}" ]] && [[ -s "${KCLogin}" ]]; then
 		PLAccount="${PLAccount:-${PLCommonAccount}}"
 		PLServer="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Server" "${PLAutomount}" 2>/dev/null)"
 		PLShare="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Share" "${PLAutomount}" 2>/dev/null)"
-		if [[ -n "${PLProtocol}" && -n "${PLAccount}" && -n "${PLServer}" && -n "${PLShare}" ]] && ! mount | egrep -s -q "^//${PLAccount}@${PLServer}/${PLShare} on /Volumes/${PLShare} \(${PLProtocol}fs,.*${USERNAME}\)$" 2>/dev/null; then
-			if [[ -n "${PLValidIPRanges}" ]]; then
+		#if [[ -n "${PLProtocol}" && -n "${PLAccount}" && -n "${PLServer}" && -n "${PLShare}" ]] && ! mount | egrep -s -q "^//${PLAccount}@${PLServer}/${PLShare} on /Volumes/${PLShare} \(${PLProtocol}fs,.*${USERNAME}\)$" 2>/dev/null; then
+		if [[ -n "${PLProtocol}" && -n "${PLAccount}" && -n "${PLServer}" && -n "${PLShare}" ]] && ! mount | egrep -s -q "^//.*${PLServer}/${PLShare} on /Volumes/${PLShare} \(.*, mounted by ${USERNAME}\)$" 2>/dev/null; then
+			if [ -n "${PLValidIPRanges}" ]; then
 				IsInValidRange=1
 				for IPAddress in "${IPAddresses[@]}"; do
 					IPAddressPart="$(echo "${IPAddress}" | cut -d'.' -f1-3)"
@@ -180,12 +185,12 @@ if [[ -s "${PLAutomount}" ]] && [[ -s "${KCLogin}" ]]; then
 				done
 			fi
 
-			if [[ ${IsInValidRange} -eq 0 ]]; then
+			if [ ${IsInValidRange} -eq 0 ]; then
 				Try=0
-				while ! ping -c 1 -t 1 -o -q "${PLServer}" >/dev/null 2>&1 && [[ ${Try} -le ${PLMaxRetryInSeconds} ]]; do
+				while ! ping -c 1 -t 1 -o -q "${PLServer}" >/dev/null 2>&1 && [ ${Try} -le ${PLMaxRetryInSeconds} ]; do
 					((Try++))
 				done
-				if [[ ${Try} -gt ${PLMaxRetryInSeconds} ]]; then
+				if [ ${Try} -gt ${PLMaxRetryInSeconds} ]; then
 					((Idx++))
 					continue
 				fi
@@ -193,7 +198,7 @@ if [[ -s "${PLAutomount}" ]] && [[ -s "${KCLogin}" ]]; then
 				if ! eval $(
 				security find-internet-password \
 					-g \
-					-r "$(printf "%-4s" "${PLProtocol}")" \
+					-r "$(eval echo "\"\${Ptcl_${PLProtocol}}\"")" \
 					-a "${PLAccount}" \
 					-l "${PLServer}" \
 					"${KCLogin}" 2>&1 |\
@@ -210,13 +215,35 @@ if [[ -s "${PLAutomount}" ]] && [[ -s "${KCLogin}" ]]; then
 					continue
 				fi
 						
-				if [[ ! -d "/Volumes/${PLShare}" ]] && ! { mkdir -p "/Volumes/${PLShare}" && chown "${USERNAME}:staff" "/Volumes/${PLShare}"; } >/dev/null 2>&1;	then
+				if [ ! -d "/Volumes/${PLShare}" ] && ! { mkdir -p "/Volumes/${PLShare}" && chown "${USERNAME}:staff" "/Volumes/${PLShare}"; } >/dev/null 2>&1;	then
 					rmdir "/Volumes/${PLShare}" >/dev/null 2>&1
 					((Idx++))
 					continue
 				fi
 						
-				mount -t ${PLProtocol}${PLCommonMountOptions:+ -o ${PLCommonMountOptions}} "${PLProtocol}://${PLAccount}:${KCpassword}@${PLServer}/${PLShare}" "/Volumes/${PLShare}" 2>/dev/null
+                case "${PLProtocol}" in
+                    "https")
+                        RV="$(expect -c '
+                            set timeout 15
+                            log_user 0
+                            spawn /sbin/mount_webdav -s -i'"${PLMountOptions:+ -o ${PLMountOptions}}"' '"${PLProtocol}"'://'"${PLServer}"' /Volumes/'"${PLShare}"'
+                            expect "name:" {
+                                send "'"${PLAccount}"'\r"
+                            }
+                            expect timeout {
+                                exit
+                            } "word:" {
+                                send "'"${KCpassword}"'\r"
+                                exp_continue
+                            }
+                            ' 2>&1)"
+                        RC=${?}
+                        ;;
+                    *)
+                        RV="$(mount -t ${PLProtocol}${PLMountOptions:+ -o ${PLMountOptions}} "${PLProtocol}://${PLAccount}:${KCpassword}@${PLServer}/${PLShare}" "/Volumes/${PLShare}" 2>&1)"
+                        RC=${?}
+                        ;;
+                esac
 			fi
 		fi
 		((Idx++))
