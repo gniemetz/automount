@@ -256,7 +256,7 @@ if [ -s "${PLAutomount}" ] && [ -s "${KCLogin}" ]; then
                     logger -t "${SCRIPTFILENAME}" "mount of ${PLShare} failed with RC=${RC}, RV=${RV}"
                 fi
                 EC=$((EC||RC))
-			fi
+            fi
 		fi
 		((Idx++))
 	done
