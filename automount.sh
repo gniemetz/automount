@@ -79,8 +79,9 @@ fi
 #chown root:admin /usr/local/bin/automount.sh
 #chmod 755 /usr/local/bin/automount.sh
 
-if Output_pgrep="$(pgrep -f -l "${0##*/}")"; then
-    echo "${Output_pgrep}"
+if RV="$(pgrep -f -l "${0##*/}")"; then
+    echo "${RV}"
+    logger -t "${SCRIPTFILENAME} already running, RV=${RV}"
     exit 1
 fi
 
@@ -113,6 +114,7 @@ declare -r Ptcl_https="htps"
 declare -i Idx=0
 declare -i Try
 declare -i IsInValidRange=0
+declare -i EC=0
 declare -a IPAddresses=()
 
 function cleanup {
@@ -235,11 +237,13 @@ if [ -s "${PLAutomount}" ] && [ -s "${KCLogin}" ]; then
                                 send "'"${PLAccount}"'\r"
                             }
                             expect timeout {
-                                exit
+                                exit 1
                             } "word:" {
                                 send "'"${KCpassword}"'\r"
                                 exp_continue
-                            }
+                            } eof
+                            catch wait result
+                            exit [lindex $result 3]
                             ' 2>&1)"
                         RC=${?}
                         ;;
@@ -248,12 +252,23 @@ if [ -s "${PLAutomount}" ] && [ -s "${KCLogin}" ]; then
                         RC=${?}
                         ;;
                 esac
+                if [ ${RC} -ne 0 ]; then
+                    logger -t "${SCRIPTFILENAME}" "mount of ${PLShare} failed with RC=${RC}, RV=${RV}"
+                fi
+                EC=$((EC||RC))
 			fi
 		fi
 		((Idx++))
 	done
 else
+    logger -t "${SCRIPTFILENAME}" "${PLAutomount} or ${KCLogin} are missing"
 	exit 1
 fi
 
-osascript -e "display notification \"automount runned successfully.\" with title \"automount\" subtitle \"\""
+if [ ${EC} -eq 0 ]; then
+    osascript -e "display notification \"automount runned successfully.\" with title \"automount\" subtitle \"\""
+else
+    osascript -e "display notification \"automount runned with errors.\" with title \"automount\" subtitle \"\""
+fi
+
+exit ${EC}
