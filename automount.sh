@@ -79,12 +79,6 @@ fi
 #chown root:admin /usr/local/bin/automount.sh
 #chmod 755 /usr/local/bin/automount.sh
 
-if RV="$(pgrep -f -l "${0##*/}")"; then
-    echo "${RV}"
-    logger -t "${SCRIPTFILENAME} already running, RV=${RV}"
-    exit 1
-fi
-
 # CONSTANTS
 SCRIPTPATH="${0%/*}"
 if [ "${SCRIPTPATH}" == "." ]; then
@@ -100,9 +94,47 @@ if [ "${SCRIPTNAME}" == "" ]; then
     SCRIPTEXTENSION=""
 fi
 declare -r SCRIPTPATH SCRIPTNAME SCRIPTEXTENSION
-declare -r USERNAME="$(logname)"
+case $(ps -o stat= -p ${$}) in
+    *+*)
+        declare -ri INTERACTIVE=0
+        declare -r LOGGEROPTION="-s"
+        ;;
+    *)
+        declare -ri INTERACTIVE=1
+        declare -r LOGGEROPTION=""
+        ;;
+esac
+:<<EOS
+if RV="$(pgrep -f -l "${SCRIPTFILENAME}")"; then
+    logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "${SCRIPTFILENAME} is already running, RV=${RV}"
+    exit 1
+fi
+EOS
+declare -r TMPPATH="/tmp"
+declare -r LOCKFQDN="${TMPPATH}/${SCRIPTNAME}.lock"
+declare -r LOCKFQFN="${LOCKFQDN}/pid"
+if mkdir "${LOCKFQDN}" >/dev/null 2>&1; then
+    echo "${$}" > "${LOCKFQFN}"
+else
+    _RunningPID="$(cat "${LOCKFQFN}")"
+    logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "${SCRIPTFILENAME} is already running with PID ${_RunningPID}"
+    exit 1
+fi
+declare -r USERNAME="$(id -p | awk '/^uid/ { print $2 }')"
 declare -r USERID="$(dscl . read /Users/${USERNAME} UniqueID | awk -F': ' '{ print $2 }')"
 declare -r USERHOME="$(dscl . read /Users/${USERNAME} NFSHomeDirectory | awk -F': ' '{ print $2 }')"
+LOGINNAME="$(id -p | awk '/^login/ { print $2 }')"
+if [ -z "${LOGINNAME}" ]; then
+    LOGINNAME="${USERNAME}"
+    LOGINID="${USERID}"
+    LOGINHOME="${USERHOME}"
+    LAUNCHASUSER=""
+else
+    LOGINID="$(dscl . read /Users/${LOGINNAME} UniqueID | awk -F': ' '{ print $2 }')"
+    LOGINHOME="$(dscl . read /Users/${LOGINNAME} NFSHomeDirectory | awk -F': ' '{ print $2 }')"
+    LAUNCHASUSER="launchctl asuser ${LOGINID}"
+fi
+declare -r LOGINNAME LOGINID LOGINHOME LAUNCHASUSER
 declare -r PLAutomount="${USERHOME}/Library/Preferences/it.niemetz.automount.plist"
 declare -r KCLogin="${USERHOME}/Library/Keychains/login.keychain"
 declare -ir MAXRETRYINSECONDS=30
@@ -118,6 +150,7 @@ declare -i EC=0
 declare -a IPAddresses=()
 
 function cleanup {
+	rm -rf "${LOCKFQDN}" >/dev/null 2>&1
 	unset KCpassword
 	exit ${1}
 }
@@ -253,7 +286,7 @@ if [ -s "${PLAutomount}" ] && [ -s "${KCLogin}" ]; then
                         ;;
                 esac
                 if [ ${RC} -ne 0 ]; then
-                    logger -t "${SCRIPTFILENAME}" "mount of ${PLShare} failed with RC=${RC}, RV=${RV}"
+                    logger ${LOGGEROPTION} -p 4 -t "${SCRIPTFILENAME}" "mount of ${PLShare} failed with RC=${RC}, RV=${RV}"
                 fi
                 EC=$((EC||RC))
             fi
@@ -261,14 +294,14 @@ if [ -s "${PLAutomount}" ] && [ -s "${KCLogin}" ]; then
 		((Idx++))
 	done
 else
-    logger -t "${SCRIPTFILENAME}" "${PLAutomount} or ${KCLogin} are missing"
+    logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "${PLAutomount} or ${KCLogin} are missing"
 	exit 1
 fi
 
 if [ ${EC} -eq 0 ]; then
-    osascript -e "display notification \"automount runned successfully.\" with title \"automount\" subtitle \"\""
+    ${LAUNCHASUSER} /usr/bin/osascript -e "display notification \"automount runned successfully.\" with title \"automount\" subtitle \"\""
 else
-    osascript -e "display notification \"automount runned with errors.\" with title \"automount\" subtitle \"\""
+    ${LAUNCHASUSER} /usr/bin/osascript -e "display notification \"automount runned with errors.\" with title \"automount\" subtitle \"\""
 fi
 
 exit ${EC}
