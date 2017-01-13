@@ -233,39 +233,41 @@ if [ -s "${PLAutomount}" ] && [ -s "${KCLogin}" ]; then
 					((Idx++))
 					continue
 				fi
-				
-				if ! eval $(
-				security find-internet-password \
-					-g \
-					-r "$(eval echo "\"\${Ptcl_${PLProtocol}}\"")" \
-					-a "${PLAccount}" \
-					-l "${PLServer}" \
-					"${KCLogin}" 2>&1 |\
-				awk '
-				/password:/ {
-					split($0, val, /: "/)
-					val[2]=substr(val[2], 1, length(val[2])-1)
-					gsub(/"/, "\\\"", val[2])
-					printf("KC%s=\"%s\"\n", val[1], val[2])
-				}
-				'
-				); then
-					((Idx++))
-					continue
-				fi
-						
-				if [ ! -d "/Volumes/${PLShare}" ] && ! { mkdir -p "/Volumes/${PLShare}" && chown "${USERNAME}:staff" "/Volumes/${PLShare}"; } >/dev/null 2>&1;	then
-					rmdir "/Volumes/${PLShare}" >/dev/null 2>&1
-					((Idx++))
-					continue
+					
+				MountPoint="${PLShare##*/}"
+				if [ ! -d "/Volumes/${MountPoint}" ]; then
+					if ! { mkdir -p "/Volumes/${MountPoint}" && chown "${USERNAME}:staff" "/Volumes/${MountPoint}"; }; then
+						rmdir "/Volumes/${MountPoint}" >/dev/null 2>&1
+						((Idx++))
+						continue
+					fi
 				fi
 						
                 case "${PLProtocol}" in
                     "https")
-                        RV="$(expect -c '
+			if ! eval $(
+			security find-internet-password \
+				-g \
+				-r "$(eval echo "\"\${Ptcl_${PLProtocol}}\"")" \
+				-a "${PLAccount}" \
+				-l "${PLServer}" \
+				"${KCLogin}" 2>&1 |\
+			awk '
+			/password:/ {
+				split($0, val, /: "/)
+				val[2]=substr(val[2], 1, length(val[2])-1)
+				gsub(/"/, "\\\"", val[2])
+				printf("KC%s=\"%s\"\n", val[1], val[2])
+			}
+			'
+			); then
+				((Idx++))
+				continue
+			fi
+	                RV="$(expect -c '
                             set timeout 15
                             '"${ExpectDebug}"'
-                            spawn /sbin/mount_webdav -s -i'"${PLMountOptions:+ -o ${PLMountOptions}}"' '"${PLProtocol}"'://'"${PLServer}"' /Volumes/'"${PLShare}"'
+                            spawn /sbin/mount_webdav -s -i'"${PLMountOptions:+ -o ${PLMountOptions}}"' '"${PLProtocol}"'://'"${PLServer}"' /Volumes/'"${MountPoint}"'
                             expect "name:" {
                                 send "'"${PLAccount}"'\r"
                             }
@@ -280,8 +282,31 @@ if [ -s "${PLAutomount}" ] && [ -s "${KCLogin}" ]; then
                             ' 2>&1)"
                         RC=${?}
                         ;;
+                    "nfs")
+                        RV="$(mount -t ${PLProtocol}${PLMountOptions:+ -o ${PLMountOptions}} "${PLServer}:/${PLShare}" "/Volumes/${MountPoint}" 2>&1)"
+                        RC=${?}
+                        ;;
                     *)
-                        RV="$(mount -t ${PLProtocol}${PLMountOptions:+ -o ${PLMountOptions}} "${PLProtocol}://${PLAccount}:${KCpassword}@${PLServer}/${PLShare}" "/Volumes/${PLShare}" 2>&1)"
+       			if ! eval $(
+			security find-internet-password \
+				-g \
+				-r "$(eval echo "\"\${Ptcl_${PLProtocol}}\"")" \
+				-a "${PLAccount}" \
+				-l "${PLServer}" \
+				"${KCLogin}" 2>&1 |\
+			awk '
+			/password:/ {
+				split($0, val, /: "/)
+				val[2]=substr(val[2], 1, length(val[2])-1)
+				gsub(/"/, "\\\"", val[2])
+				printf("KC%s=\"%s\"\n", val[1], val[2])
+			}
+			'
+			); then
+				((Idx++))
+				continue
+			fi
+			RV="$(mount -t ${PLProtocol}${PLMountOptions:+ -o ${PLMountOptions}} "${PLProtocol}://${PLAccount}:${KCpassword}@${PLServer}/${PLShare}" "/Volumes/${MountPoint}" 2>&1)"
                         RC=${?}
                         ;;
                 esac
