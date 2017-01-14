@@ -47,7 +47,7 @@ fi
 #			<key>MountOptions</key>
 #			<string>MOUNTOPTIONS</string>
 #			<key>Protocol</key>
-#			<string>PROTOCOL (afp/smb/https)</string>
+#			<string>PROTOCOL (afp/smb/nfs/https)</string>
 #			<key>Account</key>
 #			<string>ACCOUNT</string>
 #			<key>Server</key>
@@ -142,13 +142,14 @@ declare -r MOUNTOPTIONS="nodev,nosuid"
 declare -r Ptcl_afp="afp "
 declare -r Ptcl_smb="smb "
 declare -r Ptcl_https="htps"
-# Variables
+# Global variables
 declare -i Idx=0
 declare -i Try
 declare -i IsInValidRange=0
 declare -i EC=0
 declare -a IPAddresses=()
 
+# Functions
 function cleanup {
 	rm -rf "${LOCKFQDN}" >/dev/null 2>&1
 	exit ${1}
@@ -206,6 +207,7 @@ IPAddresses=( $(getIPAddresses) )
 
 trap 'cleanup' SIGHUP SIGINT SIGQUIT SIGTERM EXIT
 
+# Main
 if [ -s "${PLAutomount}" ] && [ -s "${KCLogin}" ]; then
 	declare -i PLCommonMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print CommonMaxRetryInSeconds" "${PLAutomount}" 2>/dev/null)"
 	PLCommonMaxRetryInSeconds="${PLCommonMaxRetryInSeconds:-${MAXRETRYINSECONDS}}"
@@ -226,7 +228,6 @@ if [ -s "${PLAutomount}" ] && [ -s "${KCLogin}" ]; then
 		PLAccount="${PLAccount:-${PLCommonAccount}}"
 		PLServer="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Server" "${PLAutomount}" 2>/dev/null)"
 		PLShare="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Share" "${PLAutomount}" 2>/dev/null)"
-		#if [[ -n "${PLProtocol}" && -n "${PLAccount}" && -n "${PLServer}" && -n "${PLShare}" ]] && ! mount | egrep -s -q "^//${PLAccount}@${PLServer}/${PLShare} on /Volumes/${PLShare} \(${PLProtocol}fs,.*${USERNAME}\)$" 2>/dev/null; then
 		if [[ -n "${PLProtocol}" && -n "${PLAccount}" && -n "${PLServer}" && -n "${PLShare}" ]] && ! mount | egrep -s -q "//.*${PLServer}/(${PLShare})? on /Volumes/${PLShare} \(.*, mounted by ${USERNAME}\)$" 2>/dev/null; then
 			if [ -n "${PLValidIPRanges}" ]; then
 				IsInValidRange=1
@@ -292,7 +293,9 @@ if [ -s "${PLAutomount}" ] && [ -s "${KCLogin}" ]; then
 						continue
 						;;
 				esac
-				if [ ${RC} -ne 0 ]; then
+				if [ ${RC} -eq 0 ]; then
+					echo "${PLShare} mounted successfully"
+				else
 					logger ${LOGGEROPTION} -p 4 -t "${SCRIPTFILENAME}" "mount of ${PLShare} failed with RC=${RC}, RV=${RV}"
 				fi
 				EC=$((EC||RC))
