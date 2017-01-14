@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 DEBUG="false"
 if [ "${DEBUG}" == false ]; then
-    set +xv
-    ExpectDebug="log_user 0"
+	set +xv
+	ExpectDebug="log_user 0"
 fi
 
 #${USERHOME}/Library/LaunchAgents/it.niemetz.automount.plist
@@ -82,57 +82,57 @@ fi
 # CONSTANTS
 SCRIPTPATH="${0%/*}"
 if [ "${SCRIPTPATH}" == "." ]; then
-    SCRIPTPATH="${PWD}"
+	SCRIPTPATH="${PWD}"
 elif [ "${SCRIPTPATH:0:1}" != "/" ]; then
-    SCRIPTPATH="$(which ${0})"
+	SCRIPTPATH="$(which ${0})"
 fi
 declare -r SCRIPTFILENAME="${0##*/}"
 SCRIPTNAME="${SCRIPTFILENAME%.*}"
 SCRIPTEXTENSION=${SCRIPTFILENAME##*.}
 if [ "${SCRIPTNAME}" == "" ]; then
-    SCRIPTNAME=".${SCRIPTEXTENSION}"
-    SCRIPTEXTENSION=""
+	SCRIPTNAME=".${SCRIPTEXTENSION}"
+	SCRIPTEXTENSION=""
 fi
 declare -r SCRIPTPATH SCRIPTNAME SCRIPTEXTENSION
 case $(ps -o stat= -p ${$}) in
-    *+*)
-        declare -ri INTERACTIVE=0
-        declare -r LOGGEROPTION="-s"
-        ;;
-    *)
-        declare -ri INTERACTIVE=1
-        declare -r LOGGEROPTION=""
-        ;;
+	*+*)
+		declare -ri INTERACTIVE=0
+		declare -r LOGGEROPTION="-s"
+		;;
+	*)
+		declare -ri INTERACTIVE=1
+		declare -r LOGGEROPTION=""
+		;;
 esac
 :<<EOS
 if RV="$(pgrep -f -l "${SCRIPTFILENAME}")"; then
-    logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "${SCRIPTFILENAME} is already running, RV=${RV}"
-    exit 1
+	logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "${SCRIPTFILENAME} is already running, RV=${RV}"
+	exit 1
 fi
 EOS
 declare -r TMPPATH="/tmp"
 declare -r LOCKFQDN="${TMPPATH}/${SCRIPTNAME}.lock"
 declare -r LOCKFQFN="${LOCKFQDN}/pid"
 if mkdir "${LOCKFQDN}" >/dev/null 2>&1; then
-    echo "${$}" > "${LOCKFQFN}"
+	echo "${$}" > "${LOCKFQFN}"
 else
-    _RunningPID="$(cat "${LOCKFQFN}")"
-    logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "${SCRIPTFILENAME} is already running with PID ${_RunningPID}"
-    exit 1
+	_RunningPID="$(cat "${LOCKFQFN}")"
+	logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "${SCRIPTFILENAME} is already running with PID ${_RunningPID}"
+	exit 1
 fi
 declare -r USERNAME="$(id -p | awk '/^uid/ { print $2 }')"
 declare -r USERID="$(dscl . read /Users/${USERNAME} UniqueID | awk -F': ' '{ print $2 }')"
 declare -r USERHOME="$(dscl . read /Users/${USERNAME} NFSHomeDirectory | awk -F': ' '{ print $2 }')"
 LOGINNAME="$(id -p | awk '/^login/ { print $2 }')"
 if [ -z "${LOGINNAME}" ]; then
-    LOGINNAME="${USERNAME}"
-    LOGINID="${USERID}"
-    LOGINHOME="${USERHOME}"
-    LAUNCHASUSER=""
+	LOGINNAME="${USERNAME}"
+	LOGINID="${USERID}"
+	LOGINHOME="${USERHOME}"
+	LAUNCHASUSER=""
 else
-    LOGINID="$(dscl . read /Users/${LOGINNAME} UniqueID | awk -F': ' '{ print $2 }')"
-    LOGINHOME="$(dscl . read /Users/${LOGINNAME} NFSHomeDirectory | awk -F': ' '{ print $2 }')"
-    LAUNCHASUSER="launchctl asuser ${LOGINID}"
+	LOGINID="$(dscl . read /Users/${LOGINNAME} UniqueID | awk -F': ' '{ print $2 }')"
+	LOGINHOME="$(dscl . read /Users/${LOGINNAME} NFSHomeDirectory | awk -F': ' '{ print $2 }')"
+	LAUNCHASUSER="launchctl asuser ${LOGINID}"
 fi
 declare -r LOGINNAME LOGINID LOGINHOME LAUNCHASUSER
 declare -r PLAutomount="${USERHOME}/Library/Preferences/it.niemetz.automount.plist"
@@ -151,7 +151,6 @@ declare -a IPAddresses=()
 
 function cleanup {
 	rm -rf "${LOCKFQDN}" >/dev/null 2>&1
-	unset KCpassword
 	exit ${1}
 }
 
@@ -187,6 +186,22 @@ function getIPAddresses {
 	echo "${_IPAddresses}"
 }
 
+function getPasswordFromKeychain {
+	security find-internet-password \
+		-g \
+		-r "$(eval echo "\"\${Ptcl_${PLProtocol}}\"")" \
+		-a "${PLAccount}" \
+		-l "${PLServer}" \
+		"${KCLogin}" 2>&1 |\
+	awk '
+	/password:/ {
+		split($0, val, /: "/)
+		val[2]=substr(val[2], 1, length(val[2])-1)
+		gsub(/"/, "\\\"", val[2])
+		printf("%s", val[2])
+	}'
+}
+
 IPAddresses=( $(getIPAddresses) )
 
 trap 'cleanup' SIGHUP SIGINT SIGQUIT SIGTERM EXIT
@@ -212,7 +227,7 @@ if [ -s "${PLAutomount}" ] && [ -s "${KCLogin}" ]; then
 		PLServer="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Server" "${PLAutomount}" 2>/dev/null)"
 		PLShare="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Share" "${PLAutomount}" 2>/dev/null)"
 		#if [[ -n "${PLProtocol}" && -n "${PLAccount}" && -n "${PLServer}" && -n "${PLShare}" ]] && ! mount | egrep -s -q "^//${PLAccount}@${PLServer}/${PLShare} on /Volumes/${PLShare} \(${PLProtocol}fs,.*${USERNAME}\)$" 2>/dev/null; then
-        if [[ -n "${PLProtocol}" && -n "${PLAccount}" && -n "${PLServer}" && -n "${PLShare}" ]] && ! mount | egrep -s -q "//.*${PLServer}/(${PLShare})? on /Volumes/${PLShare} \(.*, mounted by ${USERNAME}\)$" 2>/dev/null; then
+		if [[ -n "${PLProtocol}" && -n "${PLAccount}" && -n "${PLServer}" && -n "${PLShare}" ]] && ! mount | egrep -s -q "//.*${PLServer}/(${PLShare})? on /Volumes/${PLShare} \(.*, mounted by ${USERNAME}\)$" 2>/dev/null; then
 			if [ -n "${PLValidIPRanges}" ]; then
 				IsInValidRange=1
 				for IPAddress in "${IPAddresses[@]}"; do
@@ -243,92 +258,59 @@ if [ -s "${PLAutomount}" ] && [ -s "${KCLogin}" ]; then
 					fi
 				fi
 						
-                case "${PLProtocol}" in
-                    "https")
-			if ! eval $(
-			security find-internet-password \
-				-g \
-				-r "$(eval echo "\"\${Ptcl_${PLProtocol}}\"")" \
-				-a "${PLAccount}" \
-				-l "${PLServer}" \
-				"${KCLogin}" 2>&1 |\
-			awk '
-			/password:/ {
-				split($0, val, /: "/)
-				val[2]=substr(val[2], 1, length(val[2])-1)
-				gsub(/"/, "\\\"", val[2])
-				printf("KC%s=\"%s\"\n", val[1], val[2])
-			}
-			'
-			); then
-				((Idx++))
-				continue
+				case "${PLProtocol}" in
+					https)
+						RV="$(expect -c '
+							set timeout 15
+							'"${ExpectDebug}"'
+							spawn /sbin/mount_webdav -s -i'"${PLMountOptions:+ -o ${PLMountOptions}}"' '"${PLProtocol}"'://'"${PLServer}"' /Volumes/'"${MountPoint}"'
+							expect "name:" {
+								send "'"${PLAccount}"'\r"
+							}
+							expect timeout {
+								exit 1
+							} "word:" {
+								send "'$(getPasswordFromKeychain)'\r"
+								exp_continue
+							} eof
+							catch wait result
+							exit [lindex $result 3]
+							' 2>&1)"
+						RC=${?}
+						;;
+					nfs)
+						RV="$(mount -t ${PLProtocol}${PLMountOptions:+ -o ${PLMountOptions}} "${PLServer}:/${PLShare}" "/Volumes/${MountPoint}" 2>&1)"
+						RC=${?}
+						;;
+					afp|smb)
+						RV="$(mount -t ${PLProtocol}${PLMountOptions:+ -o ${PLMountOptions}} "${PLProtocol}://${PLAccount}:$(getPasswordFromKeychain)@${PLServer}/${PLShare}" "/Volumes/${MountPoint}" 2>&1)"
+						RC=${?}
+						;;
+					*)
+						logger ${LOGGEROPTION} -p 4 -t "${SCRIPTFILENAME}" "Unknown protocol ${PLProtocol}"
+						((Idx++))
+						continue
+						;;
+				esac
+				if [ ${RC} -ne 0 ]; then
+					logger ${LOGGEROPTION} -p 4 -t "${SCRIPTFILENAME}" "mount of ${PLShare} failed with RC=${RC}, RV=${RV}"
+				fi
+				EC=$((EC||RC))
 			fi
-	                RV="$(expect -c '
-                            set timeout 15
-                            '"${ExpectDebug}"'
-                            spawn /sbin/mount_webdav -s -i'"${PLMountOptions:+ -o ${PLMountOptions}}"' '"${PLProtocol}"'://'"${PLServer}"' /Volumes/'"${MountPoint}"'
-                            expect "name:" {
-                                send "'"${PLAccount}"'\r"
-                            }
-                            expect timeout {
-                                exit 1
-                            } "word:" {
-                                send "'"${KCpassword}"'\r"
-                                exp_continue
-                            } eof
-                            catch wait result
-                            exit [lindex $result 3]
-                            ' 2>&1)"
-                        RC=${?}
-                        ;;
-                    "nfs")
-                        RV="$(mount -t ${PLProtocol}${PLMountOptions:+ -o ${PLMountOptions}} "${PLServer}:/${PLShare}" "/Volumes/${MountPoint}" 2>&1)"
-                        RC=${?}
-                        ;;
-                    *)
-       			if ! eval $(
-			security find-internet-password \
-				-g \
-				-r "$(eval echo "\"\${Ptcl_${PLProtocol}}\"")" \
-				-a "${PLAccount}" \
-				-l "${PLServer}" \
-				"${KCLogin}" 2>&1 |\
-			awk '
-			/password:/ {
-				split($0, val, /: "/)
-				val[2]=substr(val[2], 1, length(val[2])-1)
-				gsub(/"/, "\\\"", val[2])
-				printf("KC%s=\"%s\"\n", val[1], val[2])
-			}
-			'
-			); then
-				((Idx++))
-				continue
-			fi
-			RV="$(mount -t ${PLProtocol}${PLMountOptions:+ -o ${PLMountOptions}} "${PLProtocol}://${PLAccount}:${KCpassword}@${PLServer}/${PLShare}" "/Volumes/${MountPoint}" 2>&1)"
-                        RC=${?}
-                        ;;
-                esac
-                if [ ${RC} -ne 0 ]; then
-                    logger ${LOGGEROPTION} -p 4 -t "${SCRIPTFILENAME}" "mount of ${PLShare} failed with RC=${RC}, RV=${RV}"
-                fi
-                EC=$((EC||RC))
-            fi
 		fi
 		((Idx++))
 	done
 else
-    logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "${PLAutomount} or ${KCLogin} are missing"
+	logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "${PLAutomount} or ${KCLogin} are missing"
 	exit 1
 fi
 
 if [ ${EC} -eq 0 ]; then
-    logger ${LOGGEROPTION} -p 6 -t "${SCRIPTFILENAME}" "automount runned successfully."
-    ${LAUNCHASUSER} /usr/bin/osascript -e "display notification \"automount runned successfully.\" with title \"automount\" subtitle \"\""
+	logger ${LOGGEROPTION} -p 6 -t "${SCRIPTFILENAME}" "automount runned successfully."
+	${LAUNCHASUSER} /usr/bin/osascript -e "display notification \"automount runned successfully.\" with title \"automount\" subtitle \"\""
 else
-    logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "automount runned with errors."
-    ${LAUNCHASUSER} /usr/bin/osascript -e "display notification \"automount runned with errors.\" with title \"automount\" subtitle \"\""
+	logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "automount runned with errors."
+	${LAUNCHASUSER} /usr/bin/osascript -e "display notification \"automount runned with errors.\" with title \"automount\" subtitle \"\""
 fi
 
 exit ${EC}
