@@ -3,6 +3,9 @@ DEBUG="false"
 if [ "${DEBUG}" == false ]; then
 	set +xv
 	ExpectDebug="log_user 0"
+else
+	set -xv
+	ExpectDebug="log_user 1"
 fi
 
 #${USERHOME}/Library/LaunchAgents/it.niemetz.automount.plist
@@ -47,7 +50,7 @@ fi
 #			<key>MountOptions</key>
 #			<string>MOUNTOPTIONS</string>
 #			<key>Protocol</key>
-#			<string>PROTOCOL (afp/smb/nfs/https)</string>
+#			<string>PROTOCOL (afp/smb/ftp (readonly)/nfs/http/https)</string>
 #			<key>Account</key>
 #			<string>ACCOUNT</string>
 #			<key>Server</key>
@@ -65,7 +68,7 @@ fi
 #	-a ACCOUNT \
 #	-l LABEL (eg. same as SERVER) \
 #	-D DESCRIPTION (eg. Networkpassword) \
-#	-r PROTOCOL ("afp "/"smb "/"htps") \
+#	-r PROTOCOL ("afp "/"smb "/"ftp"/"htps"/"http") \
 #	-s SERVER \
 #	-w PASSWORD \
 #	-T /usr/bin/security \
@@ -141,6 +144,8 @@ declare -ir MAXRETRYINSECONDS=30
 declare -r MOUNTOPTIONS="nodev,nosuid"
 declare -r Ptcl_afp="afp "
 declare -r Ptcl_smb="smb "
+declare -r Ptcl_ftp="ftp "
+declare -r Ptcl_http="http"
 declare -r Ptcl_https="htps"
 # Global variables
 declare -i Idx=0
@@ -189,18 +194,19 @@ function getIPAddresses {
 
 function getPasswordFromKeychain {
 	security find-internet-password \
-		-g \
+		-w \
 		-r "$(eval echo "\"\${Ptcl_${PLProtocol}}\"")" \
 		-a "${PLAccount}" \
 		-l "${PLServer}" \
-		"${KCLogin}" 2>&1 |\
-	awk '
-	/password:/ {
-		split($0, val, /: "/)
-		val[2]=substr(val[2], 1, length(val[2])-1)
-		gsub(/"/, "\\\"", val[2])
-		printf("%s", val[2])
-	}'
+		-j "${SCRIPTNAME}" \
+		"${KCLogin}" # 2>&1 |\
+	# awk '
+	# /password:/ {
+	# 	split($0, val, /: "/)
+	# 	val[2]=substr(val[2], 1, length(val[2])-1)
+	# 	gsub(/"/, "\\\"", val[2])
+	# 	printf("%s", val[2])
+	# }'
 }
 
 IPAddresses=( $(getIPAddresses) )
@@ -215,7 +221,7 @@ if [ -s "${PLAutomount}" ] && [ -s "${KCLogin}" ]; then
 	PLCommonMountOptions="$(/usr/libexec/PlistBuddy -c "Print CommonMountOptions" "${PLAutomount}" 2>/dev/null)"
 	PLCommonMountOptions="${PLCommonMountOptions:-${MOUNTOPTIONS}}"
 	PLCommonAccount="$(/usr/libexec/PlistBuddy -c "Print CommonAccount" "${PLAutomount}" 2>/dev/null)"
-	PLCommonAccount="${PLCommonAccount:-${USERNAME}}"
+	PLCommonAccount="${PLCommonAccount:-${LOGINNAME}}"
 	while /usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}" "${PLAutomount}" >/dev/null 2>&1; do
 		PLValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:ValidIPRanges" "${PLAutomount}" 2>/dev/null)"
 		PLValidIPRanges="${PLValidIPRanges:-${PLCommonValidIPRanges}}"
@@ -260,11 +266,30 @@ if [ -s "${PLAutomount}" ] && [ -s "${KCLogin}" ]; then
 				fi
 						
 				case "${PLProtocol}" in
-					https)
+					http|https)
 						RV="$(expect -c '
 							set timeout 15
 							'"${ExpectDebug}"'
 							spawn /sbin/mount_webdav -s -i'"${PLMountOptions:+ -o ${PLMountOptions}}"' '"${PLProtocol}"'://'"${PLServer}"' /Volumes/'"${MountPoint}"'
+							expect "name:" {
+								send "'"${PLAccount}"'\r"
+							}
+							expect timeout {
+								exit 1
+							} "word:" {
+								send "'$(getPasswordFromKeychain)'\r"
+								exp_continue
+							} eof
+							catch wait result
+							exit [lindex $result 3]
+							' 2>&1)"
+						RC=${?}
+						;;
+					ftp)
+						RV="$(expect -c '
+							set timeout 15
+							'"${ExpectDebug}"'
+							spawn /sbin/mount_ftp -i'"${PLMountOptions:+ -o ${PLMountOptions}}"' '"${PLProtocol}"'://'"${PLServer}"' /Volumes/'"${MountPoint}"'
 							expect "name:" {
 								send "'"${PLAccount}"'\r"
 							}
