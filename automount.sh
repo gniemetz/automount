@@ -21,6 +21,15 @@ fi
 #	</array>
 #	<key>RunAtLoad</key>
 #	<true/>
+#	<key>WatchPaths</key>
+#	<array>
+#		<string>/Library/Preferences/SystemConfiguration</string>
+#	</array>
+#	<key>KeepAlive</key>
+#	<dict>
+#		<key>NetworkState</key>
+#		<true/>
+#	</dict>
 #</dict>
 #</plist>
 #chown ${USERNAME}:staff ${USERHOME}/Library/LaunchAgents/it.niemetz.automount.plist
@@ -33,9 +42,9 @@ fi
 #<plist version="1.0">
 #<dict>
 #	<key>CommonMaxRetryInSeconds</key>
-#	<integer>COMMONMAXRETRYINSECONDS (30)</integer>
+#	<integer>COMMONMAXRETRYINSECONDS (eg. 30)</integer>
 #	<key>CommonValidIPRanges</key>
-#	<string>COMMONVALIDIPRANGES (10.0.0,192.168.0)</string>
+#	<string>COMMONVALIDIPRANGES (eg. 10.0.0,192.168.0)</string>
 #	<key>CommonAccount</key>
 #	<string>COMMONACCOUNT</string>
 #	<key>CommonMountOptions</key>
@@ -46,7 +55,7 @@ fi
 #			<key>MaxRetryInSeconds</key>
 #			<integer>MAXRETRYINSECONDS</integer>
 #			<key>ValidIPRanges</key>
-#			<string>VALIDIPRANGES (10.0.0,192.168.0)</string>
+#			<string>VALIDIPRANGES (eg. 10.0.0,192.168.0)</string>
 #			<key>MountOptions</key>
 #			<string>MOUNTOPTIONS</string>
 #			<key>Protocol</key>
@@ -68,15 +77,19 @@ fi
 #	-a ACCOUNT \
 #	-l LABEL (eg. same as SERVER) \
 #	-D DESCRIPTION (eg. Networkpassword) \
+#	-j COMMENT (${SCRIPTNAME}) \
 #	-r PROTOCOL ("afp "/"smb "/"ftp"/"htps"/"http") \
 #	-s SERVER \
 #	-w PASSWORD \
+#	-U \
 #	-T /usr/bin/security \
-#   -T /System/Library/Extensions/webdav_fs.kext/Contents/Resources/webdavfs_agent \
+#	-T /System/Library/Extensions/webdav_fs.kext/Contents/Resources/webdavfs_agent \
 #	-T /System/Library/CoreServices/NetAuthAgent.app/Contents/MacOS/NetAuthSysAgent \
 #	-T /System/Library/CoreServices/NetAuthAgent.app \
 #	-T group://NetAuth \
-#	${USERHOME}/Library/Keychains/login.keychain
+#false	${USERHOME}/Library/Keychains/login.keychain
+
+#Server="SERVER"; Label="${Server}"; Description="DESCRIPTION"; Protocol="PROTOCOL"; Account="$(id -p | awk '/^login/ { print $2; exit } /^uid/ { print $2 }')"; Userhome="$(dscl . read /Users/${Account} NFSHomeDirectory | cut -d' ' -f2-)"; security add-internet-password -a "${Account}" -l "${Label}" -D "${Description:-Netzwerkpasswort}" -j "automount" -r "$(printf "%-4s" ${Protocol})" -s "${Server}" -w "$(read -p "Password: " -s && echo "${REPLY}")" -U -T /usr/bin/security -T /System/Library/CoreServices/NetAuthAgent.app/Contents/MacOS/NetAuthSysAgent -T /System/Library/CoreServices/NetAuthAgent.app -T group://NetAuth ${USERHOME}/Library/Keychains/login.keychain
 
 #/usr/local/bin/automount.sh
 #chown root:admin /usr/local/bin/automount.sh
@@ -199,14 +212,8 @@ function getPasswordFromKeychain {
 		-a "${PLAccount}" \
 		-l "${PLServer}" \
 		-j "${SCRIPTNAME}" \
-		"${KCLogin}" # 2>&1 |\
-	# awk '
-	# /password:/ {
-	# 	split($0, val, /: "/)
-	# 	val[2]=substr(val[2], 1, length(val[2])-1)
-	# 	gsub(/"/, "\\\"", val[2])
-	# 	printf("%s", val[2])
-	# }'
+		"${KCLogin}" 2>/dev/null
+	return ${?}
 }
 
 IPAddresses=( $(getIPAddresses) )
