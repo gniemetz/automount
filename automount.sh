@@ -18,6 +18,7 @@ fi
 #	<key>ProgramArguments</key>
 #	<array>
 #		<string>/usr/local/bin/automount.sh</string>
+#		<string>--mountall</string>
 #	</array>
 #	<key>RunAtLoad</key>
 #	<true/>
@@ -139,12 +140,17 @@ declare -r TMPAPN="/tmp"
 declare -r LOCKAPN="${TMPAPN}/${SCRIPTNAME}.lock"
 # lock file (absolute file name)
 declare -r LOCKAFN="${LOCKAPN}/pid"
-if mkdir "${LOCKAPN}" >/dev/null 2>&1; then
-	echo "${$}" > "${LOCKAFN}"
-else
+if ! { mkdir "${LOCKAPN}" && echo "${$}" > "${LOCKAFN}"; } 2>/dev/null; then
 	_RunningPID="$(cat "${LOCKAFN}")"
-	logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "${SCRIPTFILENAME} is already running${_RunningPID:+ with PID ${_RunningPID}}"
-	exit 1
+	if RV="$(pgrep -f -l -F "${LOCKAFN}" "${SCRIPTFILENAME}")"; then
+		logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "${SCRIPTFILENAME} is already running${_RunningPID:+ with PID ${_RunningPID}}"
+		exit 1
+	else
+		if ! { rm -rf "${LOCKAPN}" && mkdir "${LOCKAPN}" && echo "${$}" > "${LOCKAFN}"; } 2>/dev/null; then
+			logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "Could not create \"${LOCKAFN}\", exiting"
+			exit 1
+		fi
+	fi
 fi
 # user name
 declare -r USERNAME="$(id -p | awk '/^uid/ { print $2 }')"
@@ -176,12 +182,8 @@ declare -r LOGINKEYCHAINAFN="${USERHOME}/Library/Keychains/login.keychain"
 declare -ir MAXRETRYINSECONDS=30
 # mount options
 declare -r MOUNTOPTIONS="nodev,nosuid"
-# map protocol to entry in keychain
-declare -r PTCL_afp="afp "
-declare -r PTCL_smb="smb "
-declare -r PTCL_ftp="ftp "
-declare -r PTCL_http="http"
-declare -r PTCL_https="htps"
+# map protocol to value in keychain
+declare -a PROTOCOLMAPPING=( 'afp="afp "' 'cifs="cifs "' 'ftp="ftp "' 'http="http"' 'https="htps"' 'smb="smb "' )
 # Global variables
 # index counter
 declare -i Idx=0
@@ -210,6 +212,12 @@ PLShare=""
 function cleanup {
 	rm -rf "${LOCKAPN}" >/dev/null 2>&1
 	exit ${1}
+}
+
+function show_help {
+  cat <<EOH
+Usage: ${SCRIPTFILENAME} [-m|--mountall]|[--addpassword]
+EOH
 }
 
 function getIPAddresses {
@@ -241,13 +249,38 @@ function getIPAddresses {
 				'
 		)"
 	done
-	echo "${_IPAddresses}"
+
+	if [ -n "${_IPAddresses}" ]; then
+		echo "${_IPAddresses}"
+		return 0
+	else
+		return 1
+	fi
+}
+
+function getKeychainProtocol {
+	local _SearchKeychainProtocol="${PLProtocol:-unknown_protocol}="
+	local _Protocol _KeychainProtocol
+
+
+	for _Protocol in "${PROTOCOLMAPPING[@]}"; do
+		if [[ "${_Protocol}" =~ ^${_SearchKeychainProtocol} ]]; then
+			_KeychainProtocol="${_Protocol/${_SearchKeychainProtocol}/}"
+		fi
+	done
+
+	if [ -n "${_KeychainProtocol}" ]; then
+		echo "${_KeychainProtocol}"
+		return 0
+	else
+		return 1
+	fi
 }
 
 function getPasswordFromKeychain {
 	security find-internet-password \
 		-w \
-		-r "$(eval echo "\"\${PTCL_${PLProtocol}}\"")" \
+		-r "$(getKeychainProtocol)" \
 		-a "${PLAccount}" \
 		-l "${PLServer}" \
 		-j "${SCRIPTNAME}" \
@@ -255,137 +288,197 @@ function getPasswordFromKeychain {
 	return ${?}
 }
 
+function mountAll {
+	if [ -s "${AUTOMOUNTPLISTAFN}" ] && [ -s "${LOGINKEYCHAINAFN}" ] && IPAddresses=( $(getIPAddresses) ); then
+		declare -i PLCommonMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print CommonMaxRetryInSeconds" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+		PLCommonMaxRetryInSeconds="${PLCommonMaxRetryInSeconds:-${MAXRETRYINSECONDS}}"
+		PLCommonValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print CommonValidIPRanges" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+		PLCommonMountOptions="$(/usr/libexec/PlistBuddy -c "Print CommonMountOptions" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+		PLCommonMountOptions="${PLCommonMountOptions:-${MOUNTOPTIONS}}"
+		PLCommonAccount="$(/usr/libexec/PlistBuddy -c "Print CommonAccount" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+		PLCommonAccount="${PLCommonAccount:-${LOGINNAME}}"
+		while /usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}" "${AUTOMOUNTPLISTAFN}" >/dev/null 2>&1; do
+			PLValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:ValidIPRanges" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+			PLValidIPRanges="${PLValidIPRanges:-${PLCommonValidIPRanges}}"
+			PLMountOptions="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MountOptions" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+			PLMountOptions="${PLMountOptions:-${PLCommonMountOptions}}"
+			PLMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MaxRetryInSeconds" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+			PLMaxRetryInSeconds="${PLMaxRetryInSeconds:-${PLCommonMaxRetryInSeconds}}"
+			PLProtocol="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Protocol" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+			PLAccount="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Account" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+			PLAccount="${PLAccount:-${PLCommonAccount}}"
+			PLServer="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Server" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+			PLShare="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Share" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+			if [[ -n "${PLProtocol}" && -n "${PLAccount}" && -n "${PLServer}" && -n "${PLShare}" ]] && ! mount | egrep -s -q "//.*${PLServer}/(${PLShare})? on /Volumes/${PLShare} \(.*, mounted by ${USERNAME}\)$" 2>/dev/null; then
+				if [ -n "${PLValidIPRanges}" ]; then
+					IsInValidRange=1
+					for IPAddress in "${IPAddresses[@]}"; do
+						IPAddressPart="$(echo "${IPAddress}" | cut -d'.' -f1-3)"
+						if [[ "${PLValidIPRanges}" =~ (^|,)"${IPAddressPart}"(,|$) ]]; then
+							IsInValidRange=0
+							break
+						fi
+					done
+				fi
+
+				if [ ${IsInValidRange} -eq 0 ]; then
+					Try=0
+					while ! ping -c 1 -t 1 -o -q "${PLServer}" >/dev/null 2>&1 && [ ${Try} -le ${PLMaxRetryInSeconds} ]; do
+						((Try++))
+					done
+					if [ ${Try} -gt ${PLMaxRetryInSeconds} ]; then
+						((Idx++))
+						continue
+					fi
+						
+					MountPoint="${PLShare##*/}"
+					if [ ! -d "/Volumes/${MountPoint}" ]; then
+						if ! { mkdir -p "/Volumes/${MountPoint}" && chown "${USERNAME}:staff" "/Volumes/${MountPoint}"; }; then
+							rmdir "/Volumes/${MountPoint}" >/dev/null 2>&1
+							((Idx++))
+							continue
+						fi
+					fi
+							
+					case "${PLProtocol}" in
+						http|https)
+							RV="$(expect -c '
+								set timeout 15
+								'"${ExpectDebug}"'
+								spawn /sbin/mount_webdav -s -i'"${PLMountOptions:+ -o ${PLMountOptions}}"' '"${PLProtocol}"'://'"${PLServer}"' /Volumes/'"${MountPoint}"'
+								expect "name:" {
+									send "'"${PLAccount}"'\r"
+								}
+								expect timeout {
+									exit 1
+								} "word:" {
+									send "'$(getPasswordFromKeychain)'\r"
+									exp_continue
+								} eof
+								catch wait result
+								exit [lindex $result 3]
+								' 2>&1)"
+							RC=${?}
+							;;
+						ftp)
+							RV="$(expect -c '
+								set timeout 15
+								'"${ExpectDebug}"'
+								spawn /sbin/mount_ftp -i'"${PLMountOptions:+ -o ${PLMountOptions}}"' '"${PLProtocol}"'://'"${PLServer}"' /Volumes/'"${MountPoint}"'
+								expect "name:" {
+									send "'"${PLAccount}"'\r"
+								}
+								expect timeout {
+									exit 1
+								} "word:" {
+									send "'$(getPasswordFromKeychain)'\r"
+									exp_continue
+								} eof
+								catch wait result
+								exit [lindex $result 3]
+								' 2>&1)"
+							RC=${?}
+							;;
+						nfs)
+							RV="$(mount -t ${PLProtocol}${PLMountOptions:+ -o ${PLMountOptions}} "${PLServer}:/${PLShare}" "/Volumes/${MountPoint}" 2>&1)"
+							RC=${?}
+							;;
+						afp|cifs|smb)
+							RV="$(mount -t ${PLProtocol}${PLMountOptions:+ -o ${PLMountOptions}} "${PLProtocol}://${PLAccount}:$(getPasswordFromKeychain)@${PLServer}/${PLShare}" "/Volumes/${MountPoint}" 2>&1)"
+							RC=${?}
+							;;
+						*)
+							logger ${LOGGEROPTION} -p 4 -t "${SCRIPTFILENAME}" "Unknown protocol ${PLProtocol}"
+							((Idx++))
+							continue
+							;;
+					esac
+					if [ ${RC} -eq 0 ]; then
+						echo "${PLShare} mounted successfully"
+					else
+						logger ${LOGGEROPTION} -p 4 -t "${SCRIPTFILENAME}" "mount of ${PLShare} failed with RC=${RC}, RV=${RV}"
+					fi
+					EC=$((EC||RC))
+				fi
+			fi
+			((Idx++))
+		done
+	else
+		logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "${AUTOMOUNTPLISTAFN} or ${LOGINKEYCHAINAFN} are missing"
+		exit 1
+	fi
+
+	if [ ${EC} -eq 0 ]; then
+		logger ${LOGGEROPTION} -p 6 -t "${SCRIPTFILENAME}" "automount runned successfully."
+		${LAUNCHASUSER} /usr/bin/osascript -e "display notification \"automount runned successfully.\" with title \"automount\" subtitle \"\""
+	else
+		logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "automount runned with errors."
+		${LAUNCHASUSER} /usr/bin/osascript -e "display notification \"automount runned with errors.\" with title \"automount\" subtitle \"\""
+	fi
+
+	exit ${EC}
+}
+
+# Main
 # catch traps
 trap 'cleanup' SIGHUP SIGINT SIGQUIT SIGTERM EXIT
 
-# Main
-IPAddresses=( $(getIPAddresses) )
+# parse options
+#security add-internet-password \
+#	-a ACCOUNT \
+#	-l LABEL (eg. same as SERVER) \
+#	-D DESCRIPTION (eg. Networkpassword) \
+#	-j COMMENT (${SCRIPTNAME}) \
+#	-r PROTOCOL ("afp "/"smb "/"ftp"/"htps"/"http") \
+#	-s SERVER \
+#	-w PASSWORD \
+#	-U \
+#	-T /usr/bin/security \
+#	-T /System/Library/Extensions/webdav_fs.kext/Contents/Resources/webdavfs_agent \
+#	-T /System/Library/CoreServices/NetAuthAgent.app/Contents/MacOS/NetAuthSysAgent \
+#	-T /System/Library/CoreServices/NetAuthAgent.app \
+#	-T group://NetAuth \
+#	${USERHOME}/Library/Keychains/login.keychain
 
-if [ -s "${AUTOMOUNTPLISTAFN}" ] && [ -s "${LOGINKEYCHAINAFN}" ]; then
-	declare -i PLCommonMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print CommonMaxRetryInSeconds" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
-	PLCommonMaxRetryInSeconds="${PLCommonMaxRetryInSeconds:-${MAXRETRYINSECONDS}}"
-	PLCommonValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print CommonValidIPRanges" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
-	PLCommonMountOptions="$(/usr/libexec/PlistBuddy -c "Print CommonMountOptions" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
-	PLCommonMountOptions="${PLCommonMountOptions:-${MOUNTOPTIONS}}"
-	PLCommonAccount="$(/usr/libexec/PlistBuddy -c "Print CommonAccount" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
-	PLCommonAccount="${PLCommonAccount:-${LOGINNAME}}"
-	while /usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}" "${AUTOMOUNTPLISTAFN}" >/dev/null 2>&1; do
-		PLValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:ValidIPRanges" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
-		PLValidIPRanges="${PLValidIPRanges:-${PLCommonValidIPRanges}}"
-		PLMountOptions="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MountOptions" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
-		PLMountOptions="${PLMountOptions:-${PLCommonMountOptions}}"
-		PLMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MaxRetryInSeconds" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
-		PLMaxRetryInSeconds="${PLMaxRetryInSeconds:-${PLCommonMaxRetryInSeconds}}"
-		PLProtocol="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Protocol" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
-		PLAccount="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Account" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
-		PLAccount="${PLAccount:-${PLCommonAccount}}"
-		PLServer="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Server" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
-		PLShare="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Share" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
-		if [[ -n "${PLProtocol}" && -n "${PLAccount}" && -n "${PLServer}" && -n "${PLShare}" ]] && ! mount | egrep -s -q "//.*${PLServer}/(${PLShare})? on /Volumes/${PLShare} \(.*, mounted by ${USERNAME}\)$" 2>/dev/null; then
-			if [ -n "${PLValidIPRanges}" ]; then
-				IsInValidRange=1
-				for IPAddress in "${IPAddresses[@]}"; do
-					IPAddressPart="$(echo "${IPAddress}" | cut -d'.' -f1-3)"
-					if [[ "${PLValidIPRanges}" =~ (^|,)"${IPAddressPart}"(,|$) ]]; then
-						IsInValidRange=0
-						break
-					fi
-				done
-			fi
+while :; do
+	case ${1} in
+			-h|-\?|--help)   # Call a "show_help" function to display a synopsis, then exit.
+				show_help
+				exit
+				;;
+			# -f|--file) # Takes an option argument, ensuring it has been specified.
+			# 	if [[ -n "${2}" && "${2:0:1}" != "--" && "${2:0:1}" != "-" ]]; then
+			# 		File="${2}"
+			# 		shift
+			# 	else
+			# 		echo 'ERROR: "--file" requires a non-empty option argument.\n' >&2
+			# 		exit 1
+			# 	fi
+			# 	;;
+			# --file=?*)
+			# 	file=${1#*=} # Delete everything up to "=" and assign the remainder.
+			# 	;;
+			# --file=) # Handle the case of an empty --file=
+			# 	echo  'ERROR: "--file" requires a non-empty option argument.\n' >&2
+			# 	exit 1
+			# 	;;
+			-v|--verbose)
+				((Verbose++)) # Each -v argument adds 1 to verbosity.
+				;;
+			-m|--mountall)
+				mountAll
+				;;
+			--) # End of all options.
+				shift
+				break
+				;;
+			-?*)
+				printf 'WARN: Unknown option (ignored): %s\n' "$1" >&2
+				;;
+			*) # Default case: If no more options then break out of the loop.
+				break
+	esac
 
-			if [ ${IsInValidRange} -eq 0 ]; then
-				Try=0
-				while ! ping -c 1 -t 1 -o -q "${PLServer}" >/dev/null 2>&1 && [ ${Try} -le ${PLMaxRetryInSeconds} ]; do
-					((Try++))
-				done
-				if [ ${Try} -gt ${PLMaxRetryInSeconds} ]; then
-					((Idx++))
-					continue
-				fi
-					
-				MountPoint="${PLShare##*/}"
-				if [ ! -d "/Volumes/${MountPoint}" ]; then
-					if ! { mkdir -p "/Volumes/${MountPoint}" && chown "${USERNAME}:staff" "/Volumes/${MountPoint}"; }; then
-						rmdir "/Volumes/${MountPoint}" >/dev/null 2>&1
-						((Idx++))
-						continue
-					fi
-				fi
-						
-				case "${PLProtocol}" in
-					http|https)
-						RV="$(expect -c '
-							set timeout 15
-							'"${ExpectDebug}"'
-							spawn /sbin/mount_webdav -s -i'"${PLMountOptions:+ -o ${PLMountOptions}}"' '"${PLProtocol}"'://'"${PLServer}"' /Volumes/'"${MountPoint}"'
-							expect "name:" {
-								send "'"${PLAccount}"'\r"
-							}
-							expect timeout {
-								exit 1
-							} "word:" {
-								send "'$(getPasswordFromKeychain)'\r"
-								exp_continue
-							} eof
-							catch wait result
-							exit [lindex $result 3]
-							' 2>&1)"
-						RC=${?}
-						;;
-					ftp)
-						RV="$(expect -c '
-							set timeout 15
-							'"${ExpectDebug}"'
-							spawn /sbin/mount_ftp -i'"${PLMountOptions:+ -o ${PLMountOptions}}"' '"${PLProtocol}"'://'"${PLServer}"' /Volumes/'"${MountPoint}"'
-							expect "name:" {
-								send "'"${PLAccount}"'\r"
-							}
-							expect timeout {
-								exit 1
-							} "word:" {
-								send "'$(getPasswordFromKeychain)'\r"
-								exp_continue
-							} eof
-							catch wait result
-							exit [lindex $result 3]
-							' 2>&1)"
-						RC=${?}
-						;;
-					nfs)
-						RV="$(mount -t ${PLProtocol}${PLMountOptions:+ -o ${PLMountOptions}} "${PLServer}:/${PLShare}" "/Volumes/${MountPoint}" 2>&1)"
-						RC=${?}
-						;;
-					afp|smb)
-						RV="$(mount -t ${PLProtocol}${PLMountOptions:+ -o ${PLMountOptions}} "${PLProtocol}://${PLAccount}:$(getPasswordFromKeychain)@${PLServer}/${PLShare}" "/Volumes/${MountPoint}" 2>&1)"
-						RC=${?}
-						;;
-					*)
-						logger ${LOGGEROPTION} -p 4 -t "${SCRIPTFILENAME}" "Unknown protocol ${PLProtocol}"
-						((Idx++))
-						continue
-						;;
-				esac
-				if [ ${RC} -eq 0 ]; then
-					echo "${PLShare} mounted successfully"
-				else
-					logger ${LOGGEROPTION} -p 4 -t "${SCRIPTFILENAME}" "mount of ${PLShare} failed with RC=${RC}, RV=${RV}"
-				fi
-				EC=$((EC||RC))
-			fi
-		fi
-		((Idx++))
-	done
-else
-	logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "${AUTOMOUNTPLISTAFN} or ${LOGINKEYCHAINAFN} are missing"
-	exit 1
-fi
+	shift
+done
 
-if [ ${EC} -eq 0 ]; then
-	logger ${LOGGEROPTION} -p 6 -t "${SCRIPTFILENAME}" "automount runned successfully."
-	${LAUNCHASUSER} /usr/bin/osascript -e "display notification \"automount runned successfully.\" with title \"automount\" subtitle \"\""
-else
-	logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "automount runned with errors."
-	${LAUNCHASUSER} /usr/bin/osascript -e "display notification \"automount runned with errors.\" with title \"automount\" subtitle \"\""
-fi
-
-exit ${EC}
