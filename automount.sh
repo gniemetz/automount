@@ -87,7 +87,7 @@ fi
 #	-T /System/Library/CoreServices/NetAuthAgent.app/Contents/MacOS/NetAuthSysAgent \
 #	-T /System/Library/CoreServices/NetAuthAgent.app \
 #	-T group://NetAuth \
-#false	${USERHOME}/Library/Keychains/login.keychain
+#	${USERHOME}/Library/Keychains/login.keychain
 
 #Server="SERVER"; Label="${Server}"; Description="DESCRIPTION"; Protocol="PROTOCOL"; Account="$(id -p | awk '/^login/ { print $2; exit } /^uid/ { print $2 }')"; Userhome="$(dscl . read /Users/${Account} NFSHomeDirectory | cut -d' ' -f2-)"; security add-internet-password -a "${Account}" -l "${Label}" -D "${Description:-Netzwerkpasswort}" -j "automount" -r "$(printf "%-4s" ${Protocol})" -s "${Server}" -w "$(read -p "Password: " -s && echo "${REPLY}")" -U -T /usr/bin/security -T /System/Library/CoreServices/NetAuthAgent.app/Contents/MacOS/NetAuthSysAgent -T /System/Library/CoreServices/NetAuthAgent.app -T group://NetAuth ${USERHOME}/Library/Keychains/login.keychain
 
@@ -96,14 +96,18 @@ fi
 #chmod 755 /usr/local/bin/automount.sh
 
 # CONSTANTS
+# script path
 SCRIPTPATH="${0%/*}"
 if [ "${SCRIPTPATH}" == "." ]; then
 	SCRIPTPATH="${PWD}"
 elif [ "${SCRIPTPATH:0:1}" != "/" ]; then
 	SCRIPTPATH="$(which ${0})"
 fi
+# script filename
 declare -r SCRIPTFILENAME="${0##*/}"
+# script name
 SCRIPTNAME="${SCRIPTFILENAME%.*}"
+# script filename extension
 SCRIPTEXTENSION=${SCRIPTFILENAME##*.}
 if [ "${SCRIPTNAME}" == "" ]; then
 	SCRIPTNAME=".${SCRIPTEXTENSION}"
@@ -112,10 +116,13 @@ fi
 declare -r SCRIPTPATH SCRIPTNAME SCRIPTEXTENSION
 case $(ps -o stat= -p ${$}) in
 	*+*)
+		# interactive shell
 		declare -ri INTERACTIVE=0
+		# Log the message to standard error
 		declare -r LOGGEROPTION="-s"
 		;;
 	*)
+		# background shell
 		declare -ri INTERACTIVE=1
 		declare -r LOGGEROPTION=""
 		;;
@@ -126,24 +133,34 @@ if RV="$(pgrep -f -l "${SCRIPTFILENAME}")"; then
 	exit 1
 fi
 EOS
-declare -r TMPPATH="/tmp"
-declare -r LOCKFQDN="${TMPPATH}/${SCRIPTNAME}.lock"
-declare -r LOCKFQFN="${LOCKFQDN}/pid"
-if mkdir "${LOCKFQDN}" >/dev/null 2>&1; then
-	echo "${$}" > "${LOCKFQFN}"
+# temp dir (absolute path name)
+declare -r TMPAPN="/tmp"
+# lock dir (absolute path name)
+declare -r LOCKAPN="${TMPAPN}/${SCRIPTNAME}.lock"
+# lock file (absolute file name)
+declare -r LOCKAFN="${LOCKAPN}/pid"
+if mkdir "${LOCKAPN}" >/dev/null 2>&1; then
+	echo "${$}" > "${LOCKAFN}"
 else
-	_RunningPID="$(cat "${LOCKFQFN}")"
-	logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "${SCRIPTFILENAME} is already running with PID ${_RunningPID}"
+	_RunningPID="$(cat "${LOCKAFN}")"
+	logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "${SCRIPTFILENAME} is already running${_RunningPID:+ with PID ${_RunningPID}}"
 	exit 1
 fi
+# user name
 declare -r USERNAME="$(id -p | awk '/^uid/ { print $2 }')"
+# user id
 declare -r USERID="$(dscl . read /Users/${USERNAME} UniqueID | awk -F': ' '{ print $2 }')"
+# user home
 declare -r USERHOME="$(dscl . read /Users/${USERNAME} NFSHomeDirectory | awk -F': ' '{ print $2 }')"
+# login name
 LOGINNAME="$(id -p | awk '/^login/ { print $2 }')"
 if [ -z "${LOGINNAME}" ]; then
 	LOGINNAME="${USERNAME}"
+	# login id
 	LOGINID="${USERID}"
+	# login home
 	LOGINHOME="${USERHOME}"
+	# launch as user
 	LAUNCHASUSER=""
 else
 	LOGINID="$(dscl . read /Users/${LOGINNAME} UniqueID | awk -F': ' '{ print $2 }')"
@@ -151,25 +168,47 @@ else
 	LAUNCHASUSER="launchctl asuser ${LOGINID}"
 fi
 declare -r LOGINNAME LOGINID LOGINHOME LAUNCHASUSER
-declare -r PLAutomount="${USERHOME}/Library/Preferences/it.niemetz.automount.plist"
-declare -r KCLogin="${USERHOME}/Library/Keychains/login.keychain"
+# automount plist (absolute file name)
+declare -r AUTOMOUNTPLISTAFN="${USERHOME}/Library/Preferences/it.niemetz.automount.plist"
+# login keychain (absolute file name)
+declare -r LOGINKEYCHAINAFN="${USERHOME}/Library/Keychains/login.keychain"
+# max pings
 declare -ir MAXRETRYINSECONDS=30
+# mount options
 declare -r MOUNTOPTIONS="nodev,nosuid"
-declare -r Ptcl_afp="afp "
-declare -r Ptcl_smb="smb "
-declare -r Ptcl_ftp="ftp "
-declare -r Ptcl_http="http"
-declare -r Ptcl_https="htps"
+# map protocol to entry in keychain
+declare -r PTCL_afp="afp "
+declare -r PTCL_smb="smb "
+declare -r PTCL_ftp="ftp "
+declare -r PTCL_http="http"
+declare -r PTCL_https="htps"
 # Global variables
+# index counter
 declare -i Idx=0
+# retry counter
 declare -i Try
+# is ip in valid range
 declare -i IsInValidRange=0
+# exit code
 declare -i EC=0
+# array of ip addresses
 declare -a IPAddresses=()
+# late bound variables
+declare -i PLCommonMaxRetryInSeconds
+PLCommonValidIPRanges=""
+PLCommonMountOptions=""
+PLCommonAccount=""
+PLValidIPRanges=""
+PLMountOptions=""
+declare -i PLMaxRetryInSeconds
+PLProtocol=""
+PLAccount=""
+PLServer=""
+PLShare=""
 
-# Functions
+# function definitions
 function cleanup {
-	rm -rf "${LOCKFQDN}" >/dev/null 2>&1
+	rm -rf "${LOCKAPN}" >/dev/null 2>&1
 	exit ${1}
 }
 
@@ -208,39 +247,40 @@ function getIPAddresses {
 function getPasswordFromKeychain {
 	security find-internet-password \
 		-w \
-		-r "$(eval echo "\"\${Ptcl_${PLProtocol}}\"")" \
+		-r "$(eval echo "\"\${PTCL_${PLProtocol}}\"")" \
 		-a "${PLAccount}" \
 		-l "${PLServer}" \
 		-j "${SCRIPTNAME}" \
-		"${KCLogin}" 2>/dev/null
+		"${LOGINKEYCHAINAFN}" 2>/dev/null
 	return ${?}
 }
 
-IPAddresses=( $(getIPAddresses) )
-
+# catch traps
 trap 'cleanup' SIGHUP SIGINT SIGQUIT SIGTERM EXIT
 
 # Main
-if [ -s "${PLAutomount}" ] && [ -s "${KCLogin}" ]; then
-	declare -i PLCommonMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print CommonMaxRetryInSeconds" "${PLAutomount}" 2>/dev/null)"
+IPAddresses=( $(getIPAddresses) )
+
+if [ -s "${AUTOMOUNTPLISTAFN}" ] && [ -s "${LOGINKEYCHAINAFN}" ]; then
+	declare -i PLCommonMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print CommonMaxRetryInSeconds" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
 	PLCommonMaxRetryInSeconds="${PLCommonMaxRetryInSeconds:-${MAXRETRYINSECONDS}}"
-	PLCommonValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print CommonValidIPRanges" "${PLAutomount}" 2>/dev/null)"
-	PLCommonMountOptions="$(/usr/libexec/PlistBuddy -c "Print CommonMountOptions" "${PLAutomount}" 2>/dev/null)"
+	PLCommonValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print CommonValidIPRanges" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+	PLCommonMountOptions="$(/usr/libexec/PlistBuddy -c "Print CommonMountOptions" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
 	PLCommonMountOptions="${PLCommonMountOptions:-${MOUNTOPTIONS}}"
-	PLCommonAccount="$(/usr/libexec/PlistBuddy -c "Print CommonAccount" "${PLAutomount}" 2>/dev/null)"
+	PLCommonAccount="$(/usr/libexec/PlistBuddy -c "Print CommonAccount" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
 	PLCommonAccount="${PLCommonAccount:-${LOGINNAME}}"
-	while /usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}" "${PLAutomount}" >/dev/null 2>&1; do
-		PLValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:ValidIPRanges" "${PLAutomount}" 2>/dev/null)"
+	while /usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}" "${AUTOMOUNTPLISTAFN}" >/dev/null 2>&1; do
+		PLValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:ValidIPRanges" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
 		PLValidIPRanges="${PLValidIPRanges:-${PLCommonValidIPRanges}}"
-		PLMountOptions="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MountOptions" "${PLAutomount}" 2>/dev/null)"
+		PLMountOptions="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MountOptions" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
 		PLMountOptions="${PLMountOptions:-${PLCommonMountOptions}}"
-		PLMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MaxRetryInSeconds" "${PLAutomount}" 2>/dev/null)"
+		PLMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MaxRetryInSeconds" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
 		PLMaxRetryInSeconds="${PLMaxRetryInSeconds:-${PLCommonMaxRetryInSeconds}}"
-		PLProtocol="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Protocol" "${PLAutomount}" 2>/dev/null)"
-		PLAccount="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Account" "${PLAutomount}" 2>/dev/null)"
+		PLProtocol="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Protocol" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+		PLAccount="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Account" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
 		PLAccount="${PLAccount:-${PLCommonAccount}}"
-		PLServer="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Server" "${PLAutomount}" 2>/dev/null)"
-		PLShare="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Share" "${PLAutomount}" 2>/dev/null)"
+		PLServer="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Server" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+		PLShare="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Share" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
 		if [[ -n "${PLProtocol}" && -n "${PLAccount}" && -n "${PLServer}" && -n "${PLShare}" ]] && ! mount | egrep -s -q "//.*${PLServer}/(${PLShare})? on /Volumes/${PLShare} \(.*, mounted by ${USERNAME}\)$" 2>/dev/null; then
 			if [ -n "${PLValidIPRanges}" ]; then
 				IsInValidRange=1
@@ -336,7 +376,7 @@ if [ -s "${PLAutomount}" ] && [ -s "${KCLogin}" ]; then
 		((Idx++))
 	done
 else
-	logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "${PLAutomount} or ${KCLogin} are missing"
+	logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "${AUTOMOUNTPLISTAFN} or ${LOGINKEYCHAINAFN} are missing"
 	exit 1
 fi
 
