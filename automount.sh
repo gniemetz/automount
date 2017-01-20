@@ -76,7 +76,7 @@ fi
 
 #security add-internet-password \
 #	-a ACCOUNT \
-#	-l LABEL (eg. same as SERVER) \
+#	-l LABEL (same as SERVER) \
 #	-D DESCRIPTION (eg. Networkpassword) \
 #	-j COMMENT (${SCRIPTNAME}) \
 #	-r PROTOCOL ("afp "/"smb "/"ftp"/"htps"/"http") \
@@ -196,17 +196,19 @@ declare -i EC=0
 # array of ip addresses
 declare -a IPAddresses=()
 # late bound variables
-declare -i PLCommonMaxRetryInSeconds
-PLCommonValidIPRanges=""
-PLCommonMountOptions=""
-PLCommonAccount=""
-PLValidIPRanges=""
-PLMountOptions=""
-declare -i PLMaxRetryInSeconds
-PLProtocol=""
-PLAccount=""
-PLServer=""
-PLShare=""
+declare -i CommonMaxRetryInSeconds
+CommonValidIPRanges=""
+CommonMountOptions=""
+CommonAccount=""
+ValidIPRanges=""
+MountOptions=""
+declare -i MaxRetryInSeconds
+Protocol=""
+Account=""
+Server=""
+Share=""
+# Action to do
+Action=""
 
 # function definitions
 function cleanup {
@@ -214,9 +216,9 @@ function cleanup {
 	exit ${1}
 }
 
-function show_help {
+function showUsage {
   cat <<EOH
-Usage: ${SCRIPTFILENAME} [-m|--mountall]|[--addpassword]
+Usage: ${SCRIPTFILENAME} (-m|--mountall)|--addpassword (-p|--protocol) protocol (-s|--server) server [(-a|--account) account] [(-d|--description) description]
 EOH
 }
 
@@ -227,6 +229,8 @@ function getIPAddresses {
 	while [[ ( -z "${_IPAddresses}" || "${_IPAddresses}" =~ (^| )169\.[0-9]+\.[0-9]+\.[0-9]+( |$) ) && ${_Sleep} -lt 10 ]]; do
 		sleep ${_Sleep}
 		((_Sleep++))
+		#/usr/libexec/PlistBuddy -c "Print 0:_items:0:IPv4:Addresses:0" /var/folders/5s/prj3y3g13nb9mllltrcg8rcw0000gn/T/SPNetworkDataType.kuCAGYvK
+		#system_profiler SPNetworkDataType |awk '/IPv4 Addresses:/ { gsub(/      IPv4 Addresses: /, ""); printf $0 " " }'
 		_IPAddresses="$(
 			/sbin/ifconfig |\
 			/usr/bin/awk \
@@ -259,7 +263,7 @@ function getIPAddresses {
 }
 
 function getKeychainProtocol {
-	local _SearchKeychainProtocol="${PLProtocol:-unknown_protocol}="
+	local _SearchKeychainProtocol="${Protocol:-unknown_protocol}="
 	local _Protocol _KeychainProtocol
 
 
@@ -281,8 +285,8 @@ function getPasswordFromKeychain {
 	security find-internet-password \
 		-w \
 		-r "$(getKeychainProtocol)" \
-		-a "${PLAccount}" \
-		-l "${PLServer}" \
+		-a "${Account}" \
+		-l "${Server}" \
 		-j "${SCRIPTNAME}" \
 		"${LOGINKEYCHAINAFN}" 2>/dev/null
 	return ${?}
@@ -290,31 +294,31 @@ function getPasswordFromKeychain {
 
 function mountAll {
 	if [ -s "${AUTOMOUNTPLISTAFN}" ] && [ -s "${LOGINKEYCHAINAFN}" ] && IPAddresses=( $(getIPAddresses) ); then
-		declare -i PLCommonMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print CommonMaxRetryInSeconds" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
-		PLCommonMaxRetryInSeconds="${PLCommonMaxRetryInSeconds:-${MAXRETRYINSECONDS}}"
-		PLCommonValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print CommonValidIPRanges" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
-		PLCommonMountOptions="$(/usr/libexec/PlistBuddy -c "Print CommonMountOptions" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
-		PLCommonMountOptions="${PLCommonMountOptions:-${MOUNTOPTIONS}}"
-		PLCommonAccount="$(/usr/libexec/PlistBuddy -c "Print CommonAccount" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
-		PLCommonAccount="${PLCommonAccount:-${LOGINNAME}}"
+		declare -i CommonMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print CommonMaxRetryInSeconds" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+		CommonMaxRetryInSeconds="${CommonMaxRetryInSeconds:-${MAXRETRYINSECONDS}}"
+		CommonValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print CommonValidIPRanges" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+		CommonMountOptions="$(/usr/libexec/PlistBuddy -c "Print CommonMountOptions" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+		CommonMountOptions="${CommonMountOptions:-${MOUNTOPTIONS}}"
+		CommonAccount="$(/usr/libexec/PlistBuddy -c "Print CommonAccount" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+		CommonAccount="${CommonAccount:-${LOGINNAME}}"
 		while /usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}" "${AUTOMOUNTPLISTAFN}" >/dev/null 2>&1; do
-			PLValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:ValidIPRanges" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
-			PLValidIPRanges="${PLValidIPRanges:-${PLCommonValidIPRanges}}"
-			PLMountOptions="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MountOptions" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
-			PLMountOptions="${PLMountOptions:-${PLCommonMountOptions}}"
-			PLMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MaxRetryInSeconds" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
-			PLMaxRetryInSeconds="${PLMaxRetryInSeconds:-${PLCommonMaxRetryInSeconds}}"
-			PLProtocol="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Protocol" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
-			PLAccount="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Account" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
-			PLAccount="${PLAccount:-${PLCommonAccount}}"
-			PLServer="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Server" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
-			PLShare="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Share" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
-			if [[ -n "${PLProtocol}" && -n "${PLAccount}" && -n "${PLServer}" && -n "${PLShare}" ]] && ! mount | egrep -s -q "//.*${PLServer}/(${PLShare})? on /Volumes/${PLShare} \(.*, mounted by ${USERNAME}\)$" 2>/dev/null; then
-				if [ -n "${PLValidIPRanges}" ]; then
+			ValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:ValidIPRanges" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+			ValidIPRanges="${ValidIPRanges:-${CommonValidIPRanges}}"
+			MountOptions="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MountOptions" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+			MountOptions="${MountOptions:-${CommonMountOptions}}"
+			MaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MaxRetryInSeconds" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+			MaxRetryInSeconds="${MaxRetryInSeconds:-${CommonMaxRetryInSeconds}}"
+			Protocol="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Protocol" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+			Account="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Account" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+			Account="${Account:-${CommonAccount}}"
+			Server="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Server" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+			Share="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Share" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+			if [[ -n "${Protocol}" && -n "${Account}" && -n "${Server}" && -n "${Share}" ]] && ! mount | egrep -s -q "//.*${Server}/(${Share})? on /Volumes/${Share} \(.*, mounted by ${USERNAME}\)$" 2>/dev/null; then
+				if [ -n "${ValidIPRanges}" ]; then
 					IsInValidRange=1
 					for IPAddress in "${IPAddresses[@]}"; do
 						IPAddressPart="$(echo "${IPAddress}" | cut -d'.' -f1-3)"
-						if [[ "${PLValidIPRanges}" =~ (^|,)"${IPAddressPart}"(,|$) ]]; then
+						if [[ "${ValidIPRanges}" =~ (^|,)"${IPAddressPart}"(,|$) ]]; then
 							IsInValidRange=0
 							break
 						fi
@@ -323,15 +327,15 @@ function mountAll {
 
 				if [ ${IsInValidRange} -eq 0 ]; then
 					Try=0
-					while ! ping -c 1 -t 1 -o -q "${PLServer}" >/dev/null 2>&1 && [ ${Try} -le ${PLMaxRetryInSeconds} ]; do
+					while ! ping -c 1 -t 1 -o -q "${Server}" >/dev/null 2>&1 && [ ${Try} -le ${MaxRetryInSeconds} ]; do
 						((Try++))
 					done
-					if [ ${Try} -gt ${PLMaxRetryInSeconds} ]; then
+					if [ ${Try} -gt ${MaxRetryInSeconds} ]; then
 						((Idx++))
 						continue
 					fi
 						
-					MountPoint="${PLShare##*/}"
+					MountPoint="${Share##*/}"
 					if [ ! -d "/Volumes/${MountPoint}" ]; then
 						if ! { mkdir -p "/Volumes/${MountPoint}" && chown "${USERNAME}:staff" "/Volumes/${MountPoint}"; }; then
 							rmdir "/Volumes/${MountPoint}" >/dev/null 2>&1
@@ -340,14 +344,14 @@ function mountAll {
 						fi
 					fi
 							
-					case "${PLProtocol}" in
+					case "${Protocol}" in
 						http|https)
 							RV="$(expect -c '
 								set timeout 15
 								'"${ExpectDebug}"'
-								spawn /sbin/mount_webdav -s -i'"${PLMountOptions:+ -o ${PLMountOptions}}"' '"${PLProtocol}"'://'"${PLServer}"' /Volumes/'"${MountPoint}"'
+								spawn /sbin/mount_webdav -s -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' /Volumes/'"${MountPoint}"'
 								expect "name:" {
-									send "'"${PLAccount}"'\r"
+									send "'"${Account}"'\r"
 								}
 								expect timeout {
 									exit 1
@@ -364,9 +368,9 @@ function mountAll {
 							RV="$(expect -c '
 								set timeout 15
 								'"${ExpectDebug}"'
-								spawn /sbin/mount_ftp -i'"${PLMountOptions:+ -o ${PLMountOptions}}"' '"${PLProtocol}"'://'"${PLServer}"' /Volumes/'"${MountPoint}"'
+								spawn /sbin/mount_ftp -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' /Volumes/'"${MountPoint}"'
 								expect "name:" {
-									send "'"${PLAccount}"'\r"
+									send "'"${Account}"'\r"
 								}
 								expect timeout {
 									exit 1
@@ -380,23 +384,23 @@ function mountAll {
 							RC=${?}
 							;;
 						nfs)
-							RV="$(mount -t ${PLProtocol}${PLMountOptions:+ -o ${PLMountOptions}} "${PLServer}:/${PLShare}" "/Volumes/${MountPoint}" 2>&1)"
+							RV="$(mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} "${Server}:/${Share}" "/Volumes/${MountPoint}" 2>&1)"
 							RC=${?}
 							;;
 						afp|cifs|smb)
-							RV="$(mount -t ${PLProtocol}${PLMountOptions:+ -o ${PLMountOptions}} "${PLProtocol}://${PLAccount}:$(getPasswordFromKeychain)@${PLServer}/${PLShare}" "/Volumes/${MountPoint}" 2>&1)"
+							RV="$(mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "/Volumes/${MountPoint}" 2>&1)"
 							RC=${?}
 							;;
 						*)
-							logger ${LOGGEROPTION} -p 4 -t "${SCRIPTFILENAME}" "Unknown protocol ${PLProtocol}"
+							logger ${LOGGEROPTION} -p 4 -t "${SCRIPTFILENAME}" "Unknown protocol ${Protocol}"
 							((Idx++))
 							continue
 							;;
 					esac
 					if [ ${RC} -eq 0 ]; then
-						echo "${PLShare} mounted successfully"
+						echo "${Share} mounted successfully"
 					else
-						logger ${LOGGEROPTION} -p 4 -t "${SCRIPTFILENAME}" "mount of ${PLShare} failed with RC=${RC}, RV=${RV}"
+						logger ${LOGGEROPTION} -p 4 -t "${SCRIPTFILENAME}" "mount of ${Share} failed with RC=${RC}, RV=${RV}"
 					fi
 					EC=$((EC||RC))
 				fi
@@ -419,54 +423,105 @@ function mountAll {
 	exit ${EC}
 }
 
+function addPassword {
+	Account="${Account:-$(id -p | awk '/^login/ { print $2; exit } /^uid/ { print $2 }')}"
+	Userhome="$(dscl . read /Users/${Account} NFSHomeDirectory | cut -d' ' -f2-)"
+	security add-internet-password -a "${Account}" \
+		-l "${Server}" \
+		-D "${Description:-Netzwerkpasswort}" \
+		-j "${SCRIPTNAME}" \
+		-r "$(printf "%-4s" ${Protocol})" \
+		-s "${Server}" \
+		-w "$(read -p "Password: " -s && echo "${REPLY}")" \
+		-U \
+		-T /usr/bin/security \
+		-T /System/Library/CoreServices/NetAuthAgent.app/Contents/MacOS/NetAuthSysAgent \
+		-T /System/Library/CoreServices/NetAuthAgent.app \
+		-T group://NetAuth ${USERHOME}/Library/Keychains/login.keychain
+}
+
 # Main
 # catch traps
 trap 'cleanup' SIGHUP SIGINT SIGQUIT SIGTERM EXIT
 
-# parse options
-#security add-internet-password \
-#	-a ACCOUNT \
-#	-l LABEL (eg. same as SERVER) \
-#	-D DESCRIPTION (eg. Networkpassword) \
-#	-j COMMENT (${SCRIPTNAME}) \
-#	-r PROTOCOL ("afp "/"smb "/"ftp"/"htps"/"http") \
-#	-s SERVER \
-#	-w PASSWORD \
-#	-U \
-#	-T /usr/bin/security \
-#	-T /System/Library/Extensions/webdav_fs.kext/Contents/Resources/webdavfs_agent \
-#	-T /System/Library/CoreServices/NetAuthAgent.app/Contents/MacOS/NetAuthSysAgent \
-#	-T /System/Library/CoreServices/NetAuthAgent.app \
-#	-T group://NetAuth \
-#	${USERHOME}/Library/Keychains/login.keychain
-
 while :; do
 	case ${1} in
-			-h|-\?|--help)   # Call a "show_help" function to display a synopsis, then exit.
-				show_help
+			-h|-\?|--help)   # Call a "showUsage" function to display a synopsis, then exit.
+				showUsage
 				exit
 				;;
-			# -f|--file) # Takes an option argument, ensuring it has been specified.
-			# 	if [[ -n "${2}" && "${2:0:1}" != "--" && "${2:0:1}" != "-" ]]; then
-			# 		File="${2}"
-			# 		shift
-			# 	else
-			# 		echo 'ERROR: "--file" requires a non-empty option argument.\n' >&2
-			# 		exit 1
-			# 	fi
-			# 	;;
-			# --file=?*)
-			# 	file=${1#*=} # Delete everything up to "=" and assign the remainder.
-			# 	;;
-			# --file=) # Handle the case of an empty --file=
-			# 	echo  'ERROR: "--file" requires a non-empty option argument.\n' >&2
-			# 	exit 1
-			# 	;;
-			-v|--verbose)
-				((Verbose++)) # Each -v argument adds 1 to verbosity.
+			-a|--account)
+				if [[ -n "${2}" && "${2:0:1}" != "--" && "${2:0:1}" != "-" ]]; then
+					Account="${2}"
+					shift
+				else
+					echo 'ERROR: "--account" requires a non-empty option argument.\n' >&2
+					exit 1
+				fi
+				;;
+			--account=?*)
+				Account=${1#*=} # Delete everything up to "=" and assign the remainder.
+				;;
+			--account=) # Handle the case of an empty --account=
+				echo  'ERROR: "--account" requires a non-empty option argument.\n' >&2
+				exit 1
+				;;
+			-d|--description)
+				if [[ -n "${2}" && "${2:0:1}" != "--" && "${2:0:1}" != "-" ]]; then
+					Description="${2}"
+					shift
+				else
+					echo 'ERROR: "--description" requires a non-empty option argument.\n' >&2
+					exit 1
+				fi
+				;;
+			--description=?*)
+				Description=${1#*=}
+				;;
+			--description=)
+				echo  'ERROR: "--description" requires a non-empty option argument.\n' >&2
+				exit 1
+				;;
+			-p|--protocol)
+				if [[ -n "${2}" && "${2:0:1}" != "--" && "${2:0:1}" != "-" ]]; then
+					Protocol="${2}"
+					shift
+				else
+					echo 'ERROR: "--protocol" requires a non-empty option argument.\n' >&2
+					exit 1
+				fi
+				;;
+			--protocol=?*)
+				Protocol=${1#*=}
+				;;
+			--protocol=)
+				echo  'ERROR: "--protocol" requires a non-empty option argument.\n' >&2
+				exit 1
+				;;
+			-s|--server)
+				if [[ -n "${2}" && "${2:0:1}" != "--" && "${2:0:1}" != "-" ]]; then
+					Server="${2}"
+					shift
+				else
+					echo 'ERROR: "--server" requires a non-empty option argument.\n' >&2
+					exit 1
+				fi
+				;;
+			--server=?*)
+				Server=${1#*=}
+				;;
+			--server=)
+				echo  'ERROR: "--server" requires a non-empty option argument.\n' >&2
+				exit 1
+				;;
+			--addpassword)
+				Action="addPassword"
 				;;
 			-m|--mountall)
-				mountAll
+				Action="mountAll"
+				;;
+			-v|--verbose)
+				((Verbose++)) # Each -v argument adds 1 to verbosity.
 				;;
 			--) # End of all options.
 				shift
@@ -482,3 +537,19 @@ while :; do
 	shift
 done
 
+case "${Action}" in
+	mountAll)
+		mountAll
+		;;
+	addPassword)
+		if [[ -z "${Protocol}" || -z "${Server}" ]]; then
+			showUsage
+			exit
+		fi
+		addPassword
+		;;
+	*)
+		showUsage
+		exit
+		;;
+esac
