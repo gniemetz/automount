@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 DEBUG="false"
-if [ "${DEBUG}" == false ]; then
+if [ "${DEBUG}" == "false" ]; then
 	set +xv
 	ExpectDebug="log_user 0"
 else
@@ -424,20 +424,29 @@ function mountAll {
 }
 
 function addPassword {
-	Account="${Account:-$(id -p | awk '/^login/ { print $2; exit } /^uid/ { print $2 }')}"
-	Userhome="$(dscl . read /Users/${Account} NFSHomeDirectory | cut -d' ' -f2-)"
-	security add-internet-password -a "${Account}" \
+	local _Account="${Account:-${LOGINNAME}}"
+	local _Userhome="$(dscl . read /Users/${_Account} NFSHomeDirectory | cut -d' ' -f2-)"
+	local _AppAccess=""
+
+	if [[ "${Protocol}" =~ ^http(s)+ ]]; then
+		_AppAccess="-T /System/Library/Extensions/webdav_fs.kext/Contents/Resources/webdavfs_agent"
+	fi
+	security add-internet-password \
+		-a "${_Account}" \
 		-l "${Server}" \
 		-D "${Description:-Netzwerkpasswort}" \
 		-j "${SCRIPTNAME}" \
-		-r "$(printf "%-4s" ${Protocol})" \
+		-r "$(getKeychainProtocol)" \
 		-s "${Server}" \
-		-w "$(read -p "Password: " -s && echo "${REPLY}")" \
+		-w "$(read -p "Password: " -s && echo "${REPLY}"; unset REPLY)" \
 		-U \
 		-T /usr/bin/security \
 		-T /System/Library/CoreServices/NetAuthAgent.app/Contents/MacOS/NetAuthSysAgent \
 		-T /System/Library/CoreServices/NetAuthAgent.app \
-		-T group://NetAuth ${USERHOME}/Library/Keychains/login.keychain
+		-T group://NetAuth \
+		${_AppAccess} \
+		"${_Userhome}"/Library/Keychains/login.keychain
+	exit ${?}
 }
 
 # Main
