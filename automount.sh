@@ -274,7 +274,7 @@ function getKeychainProtocol {
 	done
 
 	if [ -n "${_KeychainProtocol}" ]; then
-		echo "${_KeychainProtocol}"
+		echo "${_KeychainProtocol//\"/}"
 		return 0
 	else
 		return 1
