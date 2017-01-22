@@ -97,6 +97,12 @@ fi
 #chmod 755 /usr/local/bin/automount.sh
 
 # CONSTANTS
+declare -i YES=0
+declare -i SUCCESS=${YES}
+declare -i TRUE=${YES}
+declare -i NO=1
+declare -i ERROR=${NO}
+declare -i FALSE=${NO}
 # script path
 SCRIPTPATH="${0%/*}"
 if [ "${SCRIPTPATH}" == "." ]; then
@@ -118,13 +124,13 @@ declare -r SCRIPTPATH SCRIPTNAME SCRIPTEXTENSION
 case $(ps -o stat= -p ${$}) in
 	*+*)
 		# interactive shell
-		declare -ri INTERACTIVE=0
+		declare -ri INTERACTIVE=${YES}
 		# Log the message to standard error
 		declare -r LOGGEROPTION="-s"
 		;;
 	*)
 		# background shell
-		declare -ri INTERACTIVE=1
+		declare -ri INTERACTIVE=${NO}
 		declare -r LOGGEROPTION=""
 		;;
 esac
@@ -325,7 +331,7 @@ function mountAll {
 					done
 				fi
 
-				if [ ${IsInValidRange} -eq 0 ]; then
+				if [ ${IsInValidRange} -eq ${TRUE} ]; then
 					Try=0
 					while ! ping -c 1 -t 1 -o -q "${Server}" >/dev/null 2>&1 && [ ${Try} -le ${MaxRetryInSeconds} ]; do
 						((Try++))
@@ -397,7 +403,7 @@ function mountAll {
 							continue
 							;;
 					esac
-					if [ ${RC} -eq 0 ]; then
+					if [ ${RC} -eq ${SUCCESS} ]; then
 						echo "${Share} mounted successfully"
 					else
 						logger ${LOGGEROPTION} -p 4 -t "${SCRIPTFILENAME}" "mount of ${Share} failed with RC=${RC}, RV=${RV}"
@@ -412,12 +418,16 @@ function mountAll {
 		exit 1
 	fi
 
-	if [ ${EC} -eq 0 ]; then
+	if [ ${EC} -eq ${SUCCESS} ]; then
 		logger ${LOGGEROPTION} -p 6 -t "${SCRIPTFILENAME}" "automount runned successfully."
-		${LAUNCHASUSER} /usr/bin/osascript -e "display notification \"automount runned successfully.\" with title \"automount\" subtitle \"\""
+		if [ ${INTERACTIVE} -eq ${NO} ]; then
+			${LAUNCHASUSER} /usr/bin/osascript -e "display notification \"automount runned successfully.\" with title \"automount\" subtitle \"\""
+		fi
 	else
 		logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "automount runned with errors."
-		${LAUNCHASUSER} /usr/bin/osascript -e "display notification \"automount runned with errors.\" with title \"automount\" subtitle \"\""
+		if [ ${INTERACTIVE} -eq ${NO} ]; then
+			${LAUNCHASUSER} /usr/bin/osascript -e "display notification \"automount runned with errors.\" with title \"automount\" subtitle \"\""
+		fi
 	fi
 
 	exit ${EC}
@@ -446,7 +456,14 @@ function addPassword {
 		-T group://NetAuth \
 		${_AppAccess} \
 		"${_Userhome}"/Library/Keychains/login.keychain
-	exit ${?}
+	RC=${?}
+
+	if [ ${RC} -eq ${SUCCESS} ]; then
+		logger ${LOGGEROPTION} -p 6 -t "${SCRIPTFILENAME}" "successfully added password to keychain."
+	else
+		logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "error adding password to keychain."
+	fi
+	exit ${RC}
 }
 
 # Main
@@ -455,7 +472,7 @@ trap 'cleanup' SIGHUP SIGINT SIGQUIT SIGTERM EXIT
 
 while :; do
 	case ${1} in
-			-h|-\?|--help)   # Call a "showUsage" function to display a synopsis, then exit.
+			-h|-\?|--help) # Call a "showUsage" function to display a synopsis, then exit.
 				showUsage
 				exit
 				;;
@@ -464,7 +481,7 @@ while :; do
 					Account="${2}"
 					shift
 				else
-					echo 'ERROR: "--account" requires a non-empty option argument.\n' >&2
+					printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
 					exit 1
 				fi
 				;;
@@ -472,7 +489,7 @@ while :; do
 				Account=${1#*=} # Delete everything up to "=" and assign the remainder.
 				;;
 			--account=) # Handle the case of an empty --account=
-				echo  'ERROR: "--account" requires a non-empty option argument.\n' >&2
+				printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
 				exit 1
 				;;
 			-d|--description)
@@ -480,7 +497,7 @@ while :; do
 					Description="${2}"
 					shift
 				else
-					echo 'ERROR: "--description" requires a non-empty option argument.\n' >&2
+					printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
 					exit 1
 				fi
 				;;
@@ -488,7 +505,7 @@ while :; do
 				Description=${1#*=}
 				;;
 			--description=)
-				echo  'ERROR: "--description" requires a non-empty option argument.\n' >&2
+				printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
 				exit 1
 				;;
 			-p|--protocol)
@@ -496,7 +513,7 @@ while :; do
 					Protocol="${2}"
 					shift
 				else
-					echo 'ERROR: "--protocol" requires a non-empty option argument.\n' >&2
+					printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
 					exit 1
 				fi
 				;;
@@ -504,7 +521,7 @@ while :; do
 				Protocol=${1#*=}
 				;;
 			--protocol=)
-				echo  'ERROR: "--protocol" requires a non-empty option argument.\n' >&2
+				printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
 				exit 1
 				;;
 			-s|--server)
@@ -512,7 +529,7 @@ while :; do
 					Server="${2}"
 					shift
 				else
-					echo 'ERROR: "--server" requires a non-empty option argument.\n' >&2
+					printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
 					exit 1
 				fi
 				;;
@@ -520,7 +537,7 @@ while :; do
 				Server=${1#*=}
 				;;
 			--server=)
-				echo  'ERROR: "--server" requires a non-empty option argument.\n' >&2
+				printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
 				exit 1
 				;;
 			--addpassword)
@@ -537,12 +554,11 @@ while :; do
 				break
 				;;
 			-?*)
-				printf 'WARN: Unknown option (ignored): %s\n' "$1" >&2
+				printf 'WARN: Unknown option (ignored): %s\n' "${1}" >&2
 				;;
 			*) # Default case: If no more options then break out of the loop.
 				break
 	esac
-
 	shift
 done
 
