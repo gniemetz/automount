@@ -91,18 +91,22 @@ fi
 #	${USERHOME}/Library/Keychains/login.keychain
 
 #Server="SERVER"; Label="${Server}"; Description="DESCRIPTION"; Protocol="PROTOCOL"; Account="$(id -p | awk '/^login/ { print $2; exit } /^uid/ { print $2 }')"; Userhome="$(dscl . read /Users/${Account} NFSHomeDirectory | cut -d' ' -f2-)"; security add-internet-password -a "${Account}" -l "${Label}" -D "${Description:-Netzwerkpasswort}" -j "automount" -r "$(printf "%-4s" ${Protocol})" -s "${Server}" -w "$(read -p "Password: " -s && echo "${REPLY}")" -U -T /usr/bin/security -T /System/Library/CoreServices/NetAuthAgent.app/Contents/MacOS/NetAuthSysAgent -T /System/Library/CoreServices/NetAuthAgent.app -T group://NetAuth ${USERHOME}/Library/Keychains/login.keychain
+# when error "User interaction is not allowed." occurs, unlock keychain with
+#security -v unlock-keychain -p "USERNAME_PASSWORD" ${USERHOME}/Library/Keychains/login.keychain
 
 #/usr/local/bin/automount.sh
 #chown root:admin /usr/local/bin/automount.sh
 #chmod 755 /usr/local/bin/automount.sh
 
 # CONSTANTS
-declare -i YES=0
-declare -i SUCCESS=${YES}
-declare -i TRUE=${YES}
-declare -i NO=1
-declare -i ERROR=${NO}
-declare -i FALSE=${NO}
+declare -r SCRIPTLASTMOD="2017-01-24"
+declare -r SCRIPTVERSION="0.90"
+declare -ri YES=0
+declare -ri SUCCESS=${YES}
+declare -ri TRUE=${YES}
+declare -ri NO=1
+declare -ri ERROR=${NO}
+declare -ri FALSE=${NO}
 # script path
 SCRIPTPATH="${0%/*}"
 if [ "${SCRIPTPATH}" == "." ]; then
@@ -215,6 +219,10 @@ Server=""
 Share=""
 # Action to do
 Action=""
+# verbose
+Verbose=""
+# redirect stdout
+RedirectStdout="/dev/null"
 
 # function definitions
 function cleanup {
@@ -224,7 +232,7 @@ function cleanup {
 
 function showUsage {
   cat <<EOH
-Usage: ${SCRIPTFILENAME} (-m|--mountall)|--addpassword (-p|--protocol) protocol (-s|--server) server [(-a|--account) account] [(-d|--description) description]
+Usage: ${SCRIPTFILENAME} (V${SCRIPTVERSION} ${SCRIPTLASTMOD}) (-m|--mountall)|--addpassword (-p|--protocol) protocol (-s|--server) server [(-a|--account) account] [(-d|--description) description]
 EOH
 }
 
@@ -343,7 +351,7 @@ function mountAll {
 						
 					MountPoint="${Share##*/}"
 					if [ ! -d "/Volumes/${MountPoint}" ]; then
-						if ! { mkdir -p "/Volumes/${MountPoint}" && chown "${USERNAME}:staff" "/Volumes/${MountPoint}"; }; then
+						if ! { mkdir -p ${Verbose} "/Volumes/${MountPoint}" && chown "${USERNAME}:staff" "/Volumes/${MountPoint}"; }; then
 							rmdir "/Volumes/${MountPoint}" >/dev/null 2>&1
 							((Idx++))
 							continue
@@ -406,7 +414,7 @@ function mountAll {
 					if [ ${RC} -eq ${SUCCESS} ]; then
 						echo "${Share} mounted successfully"
 					else
-						logger ${LOGGEROPTION} -p 4 -t "${SCRIPTFILENAME}" "mount of ${Share} failed with RC=${RC}, RV=${RV}"
+						logger ${LOGGEROPTION} -p 4 -t "${SCRIPTFILENAME}" "mount of ${Share} failed (RC=${RC}, RV=${RV})"
 					fi
 					EC=$((EC||RC))
 				fi
@@ -441,7 +449,7 @@ function addPassword {
 	if [[ "${Protocol}" =~ ^http(s)+ ]]; then
 		_AppAccess="-T /System/Library/Extensions/webdav_fs.kext/Contents/Resources/webdavfs_agent"
 	fi
-	security add-internet-password \
+	RV="$(security add-internet-password \
 		-a "${_Account}" \
 		-l "${Server}" \
 		-D "${Description:-Netzwerkpasswort}" \
@@ -455,13 +463,13 @@ function addPassword {
 		-T /System/Library/CoreServices/NetAuthAgent.app \
 		-T group://NetAuth \
 		${_AppAccess} \
-		"${_Userhome}"/Library/Keychains/login.keychain
+		"${_Userhome}"/Library/Keychains/login.keychain)"
 	RC=${?}
 
 	if [ ${RC} -eq ${SUCCESS} ]; then
 		logger ${LOGGEROPTION} -p 6 -t "${SCRIPTFILENAME}" "successfully added password to keychain."
 	else
-		logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "error adding password to keychain."
+		logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "error adding password to keychain. (RC=${RC}, RV=${RV})"
 	fi
 	exit ${RC}
 }
@@ -547,7 +555,7 @@ while :; do
 				Action="mountAll"
 				;;
 			-v|--verbose)
-				((Verbose++)) # Each -v argument adds 1 to verbosity.
+				Verbose="-v"
 				;;
 			--) # End of all options.
 				shift
