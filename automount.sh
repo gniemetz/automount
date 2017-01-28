@@ -125,19 +125,17 @@ if [ "${SCRIPTNAME}" == "" ]; then
 	SCRIPTEXTENSION=""
 fi
 declare -r SCRIPTPATH SCRIPTNAME SCRIPTEXTENSION
-case $(ps -o stat= -p ${$}) in
-	*+*)
+# case $(ps -o state= -p ${$}) in
+if [ -t 0 ]; then
 		# interactive shell
 		declare -ri INTERACTIVE=${YES}
 		# Log the message to standard error
 		declare -r LOGGEROPTION="-s"
-		;;
-	*)
+else
 		# background shell
 		declare -ri INTERACTIVE=${NO}
 		declare -r LOGGEROPTION=""
-		;;
-esac
+fi
 :<<EOS
 if RV="$(pgrep -f -l "${SCRIPTFILENAME}")"; then
 	logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "${SCRIPTFILENAME} is already running, RV=${RV}"
@@ -217,6 +215,7 @@ Protocol=""
 Account=""
 Server=""
 Share=""
+declare -i MountedShares=0
 # Action to do
 Action=""
 # verbose
@@ -413,6 +412,7 @@ function mountAll {
 					esac
 					if [ ${RC} -eq ${SUCCESS} ]; then
 						echo "${Share} mounted successfully"
+						((MountedShares++))
 					else
 						logger ${LOGGEROPTION} -p 4 -t "${SCRIPTFILENAME}" "mount of ${Share} failed (RC=${RC}, RV=${RV})"
 					fi
@@ -425,9 +425,10 @@ function mountAll {
 		logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "${AUTOMOUNTPLISTAFN} or ${LOGINKEYCHAINAFN} are missing"
 		exit 1
 	fi
-
 	if [ ${EC} -eq ${SUCCESS} ]; then
-		logger ${LOGGEROPTION} -p 6 -t "${SCRIPTFILENAME}" "automount runned successfully."
+		if [ ${MountedShares} -eq ${Idx} ]; then
+			logger ${LOGGEROPTION} -p 6 -t "${SCRIPTFILENAME}" "automount runned successfully."
+		fi
 		if [ ${INTERACTIVE} -eq ${NO} ]; then
 			${LAUNCHASUSER} /usr/bin/osascript -e "display notification \"automount runned successfully.\" with title \"automount\" subtitle \"\""
 		fi
