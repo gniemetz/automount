@@ -92,7 +92,7 @@ fi
 
 #Server="SERVER"; Label="${Server}"; Description="DESCRIPTION"; Protocol="PROTOCOL"; Account="$(id -p | awk '/^login/ { print $2; exit } /^uid/ { print $2 }')"; Userhome="$(dscl . read /Users/${Account} NFSHomeDirectory | cut -d' ' -f2-)"; security add-internet-password -a "${Account}" -l "${Label}" -D "${Description:-Netzwerkpasswort}" -j "automount" -r "$(printf "%-4s" ${Protocol})" -s "${Server}" -w "$(read -p "Password: " -s && echo "${REPLY}")" -U -T /usr/bin/security -T /System/Library/CoreServices/NetAuthAgent.app/Contents/MacOS/NetAuthSysAgent -T /System/Library/CoreServices/NetAuthAgent.app -T group://NetAuth ${USERHOME}/Library/Keychains/login.keychain
 # when error "User interaction is not allowed." occurs, unlock keychain with
-#security -v unlock-keychain -p "USERNAME_PASSWORD" ${USERHOME}/Library/Keychains/login.keychain
+#security unlock-keychain -p "USERNAME_PASSWORD" ${USERHOME}/Library/Keychains/login.keychain
 
 #/usr/local/bin/automount.sh
 #chown root:admin /usr/local/bin/automount.sh
@@ -107,59 +107,24 @@ declare -ri TRUE=${YES}
 declare -ri NO=1
 declare -ri ERROR=${NO}
 declare -ri FALSE=${NO}
-# script path
-SCRIPTPATH="${0%/*}"
-if [ "${SCRIPTPATH}" == "." ]; then
-	SCRIPTPATH="${PWD}"
-elif [ "${SCRIPTPATH:0:1}" != "/" ]; then
-	SCRIPTPATH="$(which ${0})"
+# script path name
+SCRIPT_PN="${0%/*}"
+if [ "${SCRIPT_PN}" == "." ]; then
+	SCRIPT_PN="${PWD}"
+elif [ "${SCRIPT_PN:0:1}" != "/" ]; then
+	SCRIPT_PN="$(which ${0})"
 fi
 # script filename
-declare -r SCRIPTFILENAME="${0##*/}"
+declare -r SCRIPT_FN="${0##*/}"
 # script name
-SCRIPTNAME="${SCRIPTFILENAME%.*}"
+SCRIPTNAME="${SCRIPT_FN%.*}"
 # script filename extension
-SCRIPTEXTENSION=${SCRIPTFILENAME##*.}
+SCRIPTEXTENSION=${SCRIPT_FN##*.}
 if [ "${SCRIPTNAME}" == "" ]; then
 	SCRIPTNAME=".${SCRIPTEXTENSION}"
 	SCRIPTEXTENSION=""
 fi
-declare -r SCRIPTPATH SCRIPTNAME SCRIPTEXTENSION
-# case $(ps -o state= -p ${$}) in
-if [ -t 0 ]; then
-		# interactive shell
-		declare -ri INTERACTIVE=${YES}
-		# Log the message to standard error
-		declare -r LOGGEROPTION="-s"
-else
-		# background shell
-		declare -ri INTERACTIVE=${NO}
-		declare -r LOGGEROPTION=""
-fi
-:<<EOS
-if RV="$(pgrep -f -l "${SCRIPTFILENAME}")"; then
-	logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "${SCRIPTFILENAME} is already running, RV=${RV}"
-	exit 1
-fi
-EOS
-# temp dir (absolute path name)
-declare -r TMPAPN="/tmp"
-# lock dir (absolute path name)
-declare -r LOCKAPN="${TMPAPN}/${SCRIPTNAME}.lock"
-# lock file (absolute file name)
-declare -r LOCKAFN="${LOCKAPN}/pid"
-if ! { mkdir "${LOCKAPN}" && echo "${$}" > "${LOCKAFN}"; } 2>/dev/null; then
-	_RunningPID="$(cat "${LOCKAFN}")"
-	if RV="$(pgrep -f -l -F "${LOCKAFN}" "${SCRIPTFILENAME}")"; then
-		logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "${SCRIPTFILENAME} is already running${_RunningPID:+ with PID ${_RunningPID}}"
-		exit 1
-	else
-		if ! { rm -rf "${LOCKAPN}" && mkdir "${LOCKAPN}" && echo "${$}" > "${LOCKAFN}"; } 2>/dev/null; then
-			logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "Could not create \"${LOCKAFN}\", exiting"
-			exit 1
-		fi
-	fi
-fi
+declare -r SCRIPT_PN SCRIPTNAME SCRIPTEXTENSION
 # user name
 declare -r USERNAME="$(id -p | awk '/^uid/ { print $2 }')"
 # user id
@@ -182,16 +147,44 @@ else
 	LAUNCHASUSER="launchctl asuser ${LOGINID}"
 fi
 declare -r LOGINNAME LOGINID LOGINHOME LAUNCHASUSER
+# case $(ps -o state= -p ${$}) in
+if [ -t 0 ]; then
+		# interactive shell
+		declare -ri INTERACTIVE=${YES}
+		# Log the message to standard error
+		declare -r LOGGEROPTION="-s"
+else
+		# background shell
+		declare -ri INTERACTIVE=${NO}
+		declare -r LOGGEROPTION=""
+fi
+:<<EOS
+if RV="$(pgrep -f -l "${SCRIPT_FN}")"; then
+	log "${SCRIPT_FN} is already running, RV=${RV}"
+	exit 1
+fi
+EOS
+# log dir (absolute path name)
+declare -r LOG_APN="${LOGINHOME}/Library/Logs"
+# log file (absolute file name)
+declare -r LOG_AFN="${LOG_APN}/${SCRIPTNAME}.log"
+# temp dir (absolute path name)
+declare -r TMP_APN="/tmp"
+# lock dir (absolute path name)
+declare -r LOCK_APN="${TMP_APN}/${SCRIPTNAME}.lock"
+# lock file (absolute file name)
+declare -r LOCK_AFN="${LOCK_APN}/pid"
 # automount plist (absolute file name)
-declare -r AUTOMOUNTPLISTAFN="${USERHOME}/Library/Preferences/it.niemetz.automount.plist"
+declare -r AUTOMOUNTPLIST_AFN="${USERHOME}/Library/Preferences/it.niemetz.automount.plist"
 # login keychain (absolute file name)
-declare -r LOGINKEYCHAINAFN="${USERHOME}/Library/Keychains/login.keychain"
+declare -r LOGINKEYCHAIN_AFN="${USERHOME}/Library/Keychains/login.keychain"
 # max pings
 declare -ir MAXRETRYINSECONDS=30
 # mount options
 declare -r MOUNTOPTIONS="nodev,nosuid"
 # map protocol to value in keychain
-declare -a PROTOCOLMAPPING=( 'afp="afp "' 'cifs="cifs "' 'ftp="ftp "' 'http="http"' 'https="htps"' 'smb="smb "' )
+declare -ra PROTOCOLMAPPING=( 'afp="afp "' 'cifs="cifs "' 'ftp="ftp "' 'http="http"' 'https="htps"' 'smb="smb "' )
+
 # Global variables
 # index counter
 declare -i Idx=0
@@ -223,15 +216,15 @@ Verbose=""
 # redirect stdout
 RedirectStdout="/dev/null"
 
-# function definitions
+# Function definitions
 function cleanup {
-	rm -rf "${LOCKAPN}" >/dev/null 2>&1
+	rm -rf "${LOCK_APN}" >/dev/null 2>&1
 	exit ${1}
 }
 
 function showUsage {
   cat <<EOH
-Usage: ${SCRIPTFILENAME} (V${SCRIPTVERSION} ${SCRIPTLASTMOD}) (-m|--mountall)|--addpassword (-p|--protocol) protocol (-s|--server) server [(-a|--account) account] [(-d|--description) description]
+Usage: ${SCRIPT_FN} (V${SCRIPTVERSION} ${SCRIPTLASTMOD}) (-m|--mountall)|--addpassword (-p|--protocol) protocol (-s|--server) server [(-a|--account) account] [(-d|--description) description]
 EOH
 }
 
@@ -301,31 +294,31 @@ function getPasswordFromKeychain {
 		-a "${Account}" \
 		-l "${Server}" \
 		-j "${SCRIPTNAME}" \
-		"${LOGINKEYCHAINAFN}" 2>/dev/null
+		"${LOGINKEYCHAIN_AFN}" 2>/dev/null
 	return ${?}
 }
 
 function mountAll {
-	if [ -s "${AUTOMOUNTPLISTAFN}" ] && [ -s "${LOGINKEYCHAINAFN}" ] && IPAddresses=( $(getIPAddresses) ); then
-		declare -i CommonMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print CommonMaxRetryInSeconds" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+	if [ -s "${AUTOMOUNTPLIST_AFN}" ] && [ -s "${LOGINKEYCHAIN_AFN}" ] && IPAddresses=( $(getIPAddresses) ); then
+		declare -i CommonMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print CommonMaxRetryInSeconds" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 		CommonMaxRetryInSeconds="${CommonMaxRetryInSeconds:-${MAXRETRYINSECONDS}}"
-		CommonValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print CommonValidIPRanges" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
-		CommonMountOptions="$(/usr/libexec/PlistBuddy -c "Print CommonMountOptions" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+		CommonValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print CommonValidIPRanges" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+		CommonMountOptions="$(/usr/libexec/PlistBuddy -c "Print CommonMountOptions" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 		CommonMountOptions="${CommonMountOptions:-${MOUNTOPTIONS}}"
-		CommonAccount="$(/usr/libexec/PlistBuddy -c "Print CommonAccount" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+		CommonAccount="$(/usr/libexec/PlistBuddy -c "Print CommonAccount" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 		CommonAccount="${CommonAccount:-${LOGINNAME}}"
-		while /usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}" "${AUTOMOUNTPLISTAFN}" >/dev/null 2>&1; do
-			ValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:ValidIPRanges" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+		while /usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}" "${AUTOMOUNTPLIST_AFN}" >/dev/null 2>&1; do
+			ValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:ValidIPRanges" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 			ValidIPRanges="${ValidIPRanges:-${CommonValidIPRanges}}"
-			MountOptions="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MountOptions" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+			MountOptions="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MountOptions" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 			MountOptions="${MountOptions:-${CommonMountOptions}}"
-			MaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MaxRetryInSeconds" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+			MaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MaxRetryInSeconds" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 			MaxRetryInSeconds="${MaxRetryInSeconds:-${CommonMaxRetryInSeconds}}"
-			Protocol="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Protocol" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
-			Account="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Account" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+			Protocol="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Protocol" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+			Account="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Account" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 			Account="${Account:-${CommonAccount}}"
-			Server="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Server" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
-			Share="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Share" "${AUTOMOUNTPLISTAFN}" 2>/dev/null)"
+			Server="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Server" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+			Share="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Share" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 			if [[ -n "${Protocol}" && -n "${Account}" && -n "${Server}" && -n "${Share}" ]] && ! mount | egrep -s -q "//.*${Server}/(${Share})? on /Volumes/${Share} \(.*, mounted by ${USERNAME}\)$" 2>/dev/null; then
 				if [ -n "${ValidIPRanges}" ]; then
 					IsInValidRange=1
@@ -400,21 +393,29 @@ function mountAll {
 							RV="$(mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} "${Server}:/${Share}" "/Volumes/${MountPoint}" 2>&1)"
 							RC=${?}
 							;;
-						afp|cifs|smb)
+						afp)
+							RV="$(mount_afp -s ${MountOptions:+ -o ${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "/Volumes/${MountPoint}" 2>&1)"
+							RC=${?}
+							;;
+						smb)
+							RV="$(mount_smb -o soft${MountOptions:+,${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "/Volumes/${MountPoint}" 2>&1)"
+							RC=${?}
+							;;
+						cifs)
 							RV="$(mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "/Volumes/${MountPoint}" 2>&1)"
 							RC=${?}
 							;;
 						*)
-							logger ${LOGGEROPTION} -p 4 -t "${SCRIPTFILENAME}" "Unknown protocol ${Protocol}"
+							log "Unknown protocol ${Protocol}"
 							((Idx++))
 							continue
 							;;
 					esac
 					if [ ${RC} -eq ${SUCCESS} ]; then
-						echo "${Share} mounted successfully"
+						log "${Share} mounted successfully"
 						((MountedShares++))
 					else
-						logger ${LOGGEROPTION} -p 4 -t "${SCRIPTFILENAME}" "mount of ${Share} failed (RC=${RC}, RV=${RV})"
+						log "mount of ${Share} failed (RC=${RC}, RV=${RV})"
 					fi
 					EC=$((EC||RC))
 				fi
@@ -422,18 +423,18 @@ function mountAll {
 			((Idx++))
 		done
 	else
-		logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "${AUTOMOUNTPLISTAFN} or ${LOGINKEYCHAINAFN} are missing"
+		log "${AUTOMOUNTPLIST_AFN} or ${LOGINKEYCHAIN_AFN} are missing"
 		exit 1
 	fi
 	if [ ${EC} -eq ${SUCCESS} ]; then
 		if [ ${MountedShares} -eq ${Idx} ]; then
-			logger ${LOGGEROPTION} -p 6 -t "${SCRIPTFILENAME}" "automount runned successfully."
+			log "automount runned successfully."
 		fi
 		if [ ${INTERACTIVE} -eq ${NO} ]; then
 			${LAUNCHASUSER} /usr/bin/osascript -e "display notification \"automount runned successfully.\" with title \"automount\" subtitle \"\""
 		fi
 	else
-		logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "automount runned with errors."
+		log "automount runned with errors."
 		if [ ${INTERACTIVE} -eq ${NO} ]; then
 			${LAUNCHASUSER} /usr/bin/osascript -e "display notification \"automount runned with errors.\" with title \"automount\" subtitle \"\""
 		fi
@@ -468,16 +469,39 @@ function addPassword {
 	RC=${?}
 
 	if [ ${RC} -eq ${SUCCESS} ]; then
-		logger ${LOGGEROPTION} -p 6 -t "${SCRIPTFILENAME}" "successfully added password to keychain."
+		log "successfully added password to keychain."
 	else
-		logger ${LOGGEROPTION} -p 3 -t "${SCRIPTFILENAME}" "error adding password to keychain. (RC=${RC}, RV=${RV})"
+		log "error adding password to keychain. (RC=${RC}, RV=${RV})"
 	fi
 	exit ${RC}
+}
+
+function log {
+	set -- "${1:-$(</dev/stdin)}" "${@:2}"
+	local _DateFormat='%Y-%m-%d %T %z'
+	local _Delimiter="|"
+	local -a _LogLevel=( "Emergency" "Alert" "Critical" "Error" "Warning" "Notice" "Info" "Debug" )
+
+	echo "${1}"
+	echo "$(date +"${_DateFormat}")${_Delimiter}${$}${_Delimiter}${1}" >>"${LOG_AFN}"
 }
 
 # Main
 # catch traps
 trap 'cleanup' SIGHUP SIGINT SIGQUIT SIGTERM EXIT
+
+if ! { mkdir "${LOCK_APN}" && echo "${$}" > "${LOCK_AFN}"; } 2>/dev/null; then
+	_RunningPID="$(cat "${LOCK_AFN}")"
+	if RV="$(pgrep -f -l -F "${LOCK_AFN}" "${SCRIPT_FN}")"; then
+		log "${SCRIPT_FN} is already running${_RunningPID:+ with PID ${_RunningPID}}"
+		exit 1
+	else
+		if ! { rm -rf "${LOCK_APN}" && mkdir "${LOCK_APN}" && echo "${$}" > "${LOCK_AFN}"; } 2>/dev/null; then
+			log "Could not create \"${LOCK_AFN}\", exiting"
+			exit 1
+		fi
+	fi
+fi
 
 while :; do
 	case ${1} in
