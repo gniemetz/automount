@@ -29,5 +29,7 @@ In the `Mountlist` array you define the mounts to process
 
 
 Prerequesites
+
 `chown ${USER}:staff ${HOME}/Library/Preferences/it.niemetz.automount.plist`
+
 `chmod 644 ${USER}/Library/Preferences/it.niemetz.automount.plist`
