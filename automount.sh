@@ -281,7 +281,7 @@ function log {
 	set -- "${1:-$(</dev/stdin)}" "${@:2}"
 
 	if [ ${_Priority} -le 3 ]; then
-		echo "ERROR ${1}" >&2
+		echo "${1}" >&2
 	else
 		echo "${1}"
 	fi
