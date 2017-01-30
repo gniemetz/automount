@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-DEBUG="true"
+DEBUG="false"
 if [ "${DEBUG}" == "false" ]; then
 	set +xv
 	ExpectDebug="log_user 0"
@@ -246,7 +246,10 @@ function log {
 		case ${1} in
 				-p|--priority)
 					if [[ -n "${2}" && "${2:0:1}" != "--" && "${2:0:1}" != "-" ]]; then
-						_Priority="${2}"
+						if ! _Priority=${2} 2>/dev/null; then
+							printf 'ERROR: "%s" requires a numeric option argument.\n' "${1}" >&2
+							exit 1
+						fi
 						shift
 					else
 						printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
@@ -254,7 +257,10 @@ function log {
 					fi
 					;;
 				--priority=?*)
-					_Priority=${1#*=}
+					if ! _Priority=${1#*=} 2>/dev/null; then
+						printf 'ERROR: "%s" requires a numeric option argument.\n' "${1}" >&2
+						exit 1
+					fi
 					;;
 				--priority=)
 					printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
@@ -545,7 +551,7 @@ function create_lock {
 	if ! { mkdir "${LOCK_APN}" && echo "${$}" > "${LOCK_AFN}"; } 2>/dev/null; then
 		_RunningPID="$(cat "${LOCK_AFN}")"
 		if RV="$(pgrep -f -l -F "${LOCK_AFN}" "${SCRIPT_FN}")"; then
-			log -p ${LOG_ERROR} "${SCRIPT_FN} is already running${_RunningPID:+ with PID ${_RunningPID}}"
+			log -p ${LOG_ERROR} "${SCRIPT_FN} is already running${_RunningPID:+ with PID ${_RunningPID}}"
 			exit 1
 		else
 			if ! { rm -rf "${LOCK_APN}" && mkdir "${LOCK_APN}" && echo "${$}" > "${LOCK_AFN}"; } 2>/dev/null; then
@@ -560,10 +566,7 @@ function create_lock {
 # catch traps
 trap 'cleanup' SIGHUP SIGINT SIGQUIT SIGTERM EXIT
 create_lock
-log -p ${LOG_INFO} "start"
-sleep 10
-log -p ${LOG_ERROR} "error"
-exit
+
 while :; do
 	case ${1} in
 			-h|-\?|--help) # Call a "showUsage" function to display a synopsis, then exit.
