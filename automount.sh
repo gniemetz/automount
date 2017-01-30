@@ -149,7 +149,7 @@ fi
 declare -r LOGINNAME LOGINID LOGINHOME LAUNCHASUSER
 # case $(ps -o state= -p ${$}) in
 if [ -t 0 ]; then
-		# interactive shell
+		# interactive shell (not started from launch daemon)
 		declare -ri INTERACTIVE=${YES}
 		# Log the message to standard error
 		declare -r LOGGEROPTION="-s"
@@ -174,6 +174,26 @@ declare -r TMP_APN="/tmp"
 declare -r LOCK_APN="${TMP_APN}/${SCRIPTNAME}.lock"
 # lock file (absolute file name)
 declare -r LOCK_AFN="${LOCK_APN}/pid"
+# log levels
+#"Emergency" "Alert" "Critical" "Error" "Warning" "Notice" "Info" "Debug"
+declare -a LOG_LEVEL
+declare -r LOG_EMERGENCY=${#LOG_LEVEL[@]}
+LOG_LEVEL[${#LOG_LEVEL[@]}]="Emergency"
+declare -r LOG_ALERT=${#LOG_LEVEL[@]}
+LOG_LEVEL[${#LOG_LEVEL[@]}]="Alert"
+declare -r LOG_CRITICAL=${#LOG_LEVEL[@]}
+LOG_LEVEL[${#LOG_LEVEL[@]}]="Critical"
+declare -r LOG_ERROR=${#LOG_LEVEL[@]}
+LOG_LEVEL[${#LOG_LEVEL[@]}]="Error"
+declare -r LOG_WARNING=${#LOG_LEVEL[@]}
+LOG_LEVEL[${#LOG_LEVEL[@]}]="Warning"
+declare -r LOG_NOTICE=${#LOG_LEVEL[@]}
+LOG_LEVEL[${#LOG_LEVEL[@]}]="Notice"
+declare -r LOG_INFO=${#LOG_LEVEL[@]}
+LOG_LEVEL[${#LOG_LEVEL[@]}]="Info"
+declare -r LOG_DEBUG=${#LOG_LEVEL[@]}
+LOG_LEVEL[${#LOG_LEVEL[@]}]="Debug"
+declare -r LOG_LEVEL
 # automount plist (absolute file name)
 declare -r AUTOMOUNTPLIST_AFN="${USERHOME}/Library/Preferences/it.niemetz.automount.plist"
 # login keychain (absolute file name)
@@ -217,6 +237,57 @@ Verbose=""
 RedirectStdout="/dev/null"
 
 # Function definitions
+function log {
+	local _DateFormat='%Y-%m-%d %T %z'
+	local _Delimiter="|"
+	local -i _Priority=6
+
+	while :; do
+		case ${1} in
+				-p|--priority)
+					if [[ -n "${2}" && "${2:0:1}" != "--" && "${2:0:1}" != "-" ]]; then
+						if ! _Priority=${2} 2>/dev/null; then
+							printf 'ERROR: "%s" requires a numeric option argument.\n' "${1}" >&2
+							exit 1
+						fi
+						shift
+					else
+						printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+						exit 1
+					fi
+					;;
+				--priority=?*)
+					if ! _Priority=${1#*=} 2>/dev/null; then
+						printf 'ERROR: "%s" requires a numeric option argument.\n' "${1}" >&2
+						exit 1
+					fi
+					;;
+				--priority=)
+					printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+					exit 1
+					;;
+				--) # End of all options.
+					shift
+					break
+					;;
+				-?*)
+					printf 'WARN: Unknown option (ignored): %s\n' "${1}" >&2
+					;;
+				*) # Default case: If no more options then break out of the loop.
+					break
+		esac
+		shift
+	done
+	set -- "${1:-$(</dev/stdin)}" "${@:2}"
+
+	if [ ${_Priority} -le 3 ]; then
+		echo "${1}" >&2
+	else
+		echo "${1}"
+	fi
+	echo "$(date +"${_DateFormat}")${_Delimiter}${$}${_Delimiter}${LOG_LEVEL[${_Priority}]}${_Delimiter}${1}" >>"${LOG_AFN}"
+}
+
 function cleanup {
 	rm -rf "${LOCK_APN}" >/dev/null 2>&1
 	exit ${1}
@@ -406,16 +477,16 @@ function mountAll {
 							RC=${?}
 							;;
 						*)
-							log "Unknown protocol ${Protocol}"
+							log -p ${LOG_ERROR} "Unknown protocol ${Protocol}"
 							((Idx++))
 							continue
 							;;
 					esac
 					if [ ${RC} -eq ${SUCCESS} ]; then
-						log "${Share} mounted successfully"
+						log -p ${LOG_INFO} "${Share} mounted successfully"
 						((MountedShares++))
 					else
-						log "mount of ${Share} failed (RC=${RC}, RV=${RV})"
+						log -p ${LOG_ERROR} "mount of ${Share} failed (RC=${RC}, RV=${RV})"
 					fi
 					EC=$((EC||RC))
 				fi
@@ -423,18 +494,18 @@ function mountAll {
 			((Idx++))
 		done
 	else
-		log "${AUTOMOUNTPLIST_AFN} or ${LOGINKEYCHAIN_AFN} are missing"
+		log -p${LOG_ERROR} "${AUTOMOUNTPLIST_AFN} or ${LOGINKEYCHAIN_AFN} are missing"
 		exit 1
 	fi
 	if [ ${EC} -eq ${SUCCESS} ]; then
 		if [ ${MountedShares} -eq ${Idx} ]; then
-			log "automount runned successfully."
+			log -p ${LOG_INFO} "automount runned successfully."
 		fi
 		if [ ${INTERACTIVE} -eq ${NO} ]; then
 			${LAUNCHASUSER} /usr/bin/osascript -e "display notification \"automount runned successfully.\" with title \"automount\" subtitle \"\""
 		fi
 	else
-		log "automount runned with errors."
+		log -p ${LOG_ERROR} "automount runned with errors."
 		if [ ${INTERACTIVE} -eq ${NO} ]; then
 			${LAUNCHASUSER} /usr/bin/osascript -e "display notification \"automount runned with errors.\" with title \"automount\" subtitle \"\""
 		fi
@@ -469,39 +540,32 @@ function addPassword {
 	RC=${?}
 
 	if [ ${RC} -eq ${SUCCESS} ]; then
-		log "successfully added password to keychain."
+		log -p ${LOG_INFO} "successfully added password to keychain."
 	else
-		log "error adding password to keychain. (RC=${RC}, RV=${RV})"
+		log -p ${LOG_ERROR} "error adding password to keychain. (RC=${RC}, RV=${RV})"
 	fi
 	exit ${RC}
 }
 
-function log {
-	set -- "${1:-$(</dev/stdin)}" "${@:2}"
-	local _DateFormat='%Y-%m-%d %T %z'
-	local _Delimiter="|"
-	local -a _LogLevel=( "Emergency" "Alert" "Critical" "Error" "Warning" "Notice" "Info" "Debug" )
-
-	echo "${1}"
-	echo "$(date +"${_DateFormat}")${_Delimiter}${$}${_Delimiter}${1}" >>"${LOG_AFN}"
+function create_lock {
+	if ! { mkdir "${LOCK_APN}" && echo "${$}" > "${LOCK_AFN}"; } 2>/dev/null; then
+		_RunningPID="$(cat "${LOCK_AFN}")"
+		if RV="$(pgrep -f -l -F "${LOCK_AFN}" "${SCRIPT_FN}")"; then
+			log -p ${LOG_ERROR} "${SCRIPT_FN} is already running${_RunningPID:+ with PID ${_RunningPID}}"
+			exit 1
+		else
+			if ! { rm -rf "${LOCK_APN}" && mkdir "${LOCK_APN}" && echo "${$}" > "${LOCK_AFN}"; } 2>/dev/null; then
+				log -p ${LOG_ERROR} "Could not create \"${LOCK_AFN}\", exiting"
+				exit 1
+			fi
+		fi
+	fi
 }
 
 # Main
 # catch traps
 trap 'cleanup' SIGHUP SIGINT SIGQUIT SIGTERM EXIT
-
-if ! { mkdir "${LOCK_APN}" && echo "${$}" > "${LOCK_AFN}"; } 2>/dev/null; then
-	_RunningPID="$(cat "${LOCK_AFN}")"
-	if RV="$(pgrep -f -l -F "${LOCK_AFN}" "${SCRIPT_FN}")"; then
-		log "${SCRIPT_FN} is already running${_RunningPID:+ with PID ${_RunningPID}}"
-		exit 1
-	else
-		if ! { rm -rf "${LOCK_APN}" && mkdir "${LOCK_APN}" && echo "${$}" > "${LOCK_AFN}"; } 2>/dev/null; then
-			log "Could not create \"${LOCK_AFN}\", exiting"
-			exit 1
-		fi
-	fi
-fi
+create_lock
 
 while :; do
 	case ${1} in
