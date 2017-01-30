@@ -4,7 +4,7 @@ All key beginning with `COMMON` are standard values and can be overridden on the
 
 `COMMONVALIDIPRANGES` (string, separated by comma) ... Only try to mount in the given networks
 
-`COMMONACCOUNT` (string) ... The account to connect to the share
+`COMMONACCOUNT` (string) ... The account to connect to the share with
 
 `COMMONMOUNTOPTIONS` (string, separated by comma) ... Mount options to use on share
 
