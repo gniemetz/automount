@@ -281,11 +281,10 @@ function log {
 	set -- "${1:-$(</dev/stdin)}" "${@:2}"
 
 	if [ ${_Priority} -le 3 ]; then
-		echo "${1}" >&2
+		echo "${1}" | tee -a "${LOG_AFN}" >&2
 	else
-		echo "${1}"
+		echo "${1}" | tee -a "${LOG_AFN}"
 	fi
-	echo "$(date +"${_DateFormat}")${_Delimiter}${$}${_Delimiter}${LOG_LEVEL[${_Priority}]}${_Delimiter}${1}" >>"${LOG_AFN}"
 }
 
 function cleanup {
