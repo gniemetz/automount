@@ -99,8 +99,8 @@ fi
 #chmod 755 /usr/local/bin/automount.sh
 
 # CONSTANTS
-declare -r SCRIPTLASTMOD="2017-01-24"
-declare -r SCRIPTVERSION="0.90"
+declare -r SCRIPTLASTMOD="2017-01-31"
+declare -r SCRIPTVERSION="0.91"
 declare -ri YES=0
 declare -ri SUCCESS=${YES}
 declare -ri TRUE=${YES}
@@ -281,10 +281,11 @@ function log {
 	set -- "${1:-$(</dev/stdin)}" "${@:2}"
 
 	if [ ${_Priority} -le 3 ]; then
-		echo "${1}" | tee -a "${LOG_AFN}" >&2
+		echo "${1}" >&2
 	else
-		echo "${1}" | tee -a "${LOG_AFN}"
+		echo "${1}"
 	fi
+	echo "$(date +"${_DateFormat}")${_Delimiter}${$}${_Delimiter}${LOG_LEVEL[${_Priority}]}${_Delimiter}${1}" >>"${LOG_AFN}"
 }
 
 function cleanup {
