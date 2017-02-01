@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-DEBUG="true"
+DEBUG="false"
 if [ "${DEBUG}" == "false" ]; then
 	set +xv
 	ExpectDebug="log_user 0"
