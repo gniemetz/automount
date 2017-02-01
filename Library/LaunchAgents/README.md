@@ -3,6 +3,7 @@
 The script `/usr/local/bin/automount.sh --mountall` is executed at 
 * login
 * any change of network settings
+
 but only when network is up and running
 
 ## Prerequisites
