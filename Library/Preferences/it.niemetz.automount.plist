@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CommonMaxRetryInSeconds</key>
+	<integer>COMMONMAXRETRYINSECONDS (eg. 30)</integer>
+	<key>CommonValidIPRanges</key>
+	<string>COMMONVALIDIPRANGES (separated by comma, eg. 10.0.0,192.168.0)</string>
+	<key>CommonAccount</key>
+	<string>COMMONACCOUNT</string>
+	<key>CommonMountOptions</key>
+	<string>COMMONMOUNTOPTIONS (separated by comma, eg. nodev,nosuid)</string>
+	<key>Mountlist</key>
+	<array>
+		<dict>
+			<key>MaxRetryInSeconds</key>
+			<integer>MAXRETRYINSECONDS</integer>
+			<key>ValidIPRanges</key>
+			<string>VALIDIPRANGES (separated by comma, eg. 10.0.0,192.168.0)</string>
+			<key>MountOptions</key>
+			<string>MOUNTOPTIONS</string>
+			<key>Protocol</key>
+			<string>PROTOCOL (afp/smb/ftp/nfs/http/https)</string>
+			<key>Account</key>
+			<string>ACCOUNT</string>
+			<key>Server</key>
+			<string>SERVER</string>
+			<key>Share</key>
+			<string>SHARE</string>
+		</dict>
+	</array>
+</dict>
+</plist>
