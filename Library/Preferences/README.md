@@ -1,34 +1,37 @@
-All key beginning with `COMMON` are standard values and can be overridden on the `Mountlist` array with the corresponding key
+# Common options
 
-`COMMONMAXRETRYINSECONDS` (numeric) ... How long to try to reach the server
+All key beginning with `COMMON` are standard values and can be overridden in the `Mountlist` array with the corresponding key
 
-`COMMONVALIDIPRANGES` (string, separated by comma) ... Only try to mount in the given networks
+* `COMMONMAXRETRYINSECONDS` (numeric) ... How long to try to reach the server
 
-`COMMONACCOUNT` (string) ... The account to connect to the share with
+* `COMMONVALIDIPRANGES` (string, separated by comma) ... Only try to mount in the given networks
 
-`COMMONMOUNTOPTIONS` (string, separated by comma) ... Mount options to use on share
+* `COMMONACCOUNT` (string) ... The account to connect to the share with
+
+* `COMMONMOUNTOPTIONS` (string, separated by comma) ... Mount options to use on share
 
 
+# Specific options
 
 In the `Mountlist` array you define the mounts to process
 
-`MAXRETRYINSECONDS` (numeric) ... see `COMMONMAXRETRYINSECONDS`
+* `MAXRETRYINSECONDS` (numeric) ... see `COMMONMAXRETRYINSECONDS`
 
-`VALIDIPRANGES` (string, separated by comma) ... see `VALIDIPRANGES`
+* `VALIDIPRANGES` (string, separated by comma) ... see `VALIDIPRANGES`
 
-`MOUNTOPTIONS` (string, separated by comma) ... see `MOUNTOPTIONS`
+* `MOUNTOPTIONS` (string, separated by comma) ... see `MOUNTOPTIONS`
 
-`PROTOCOL` (string) ... Possible values are `afp`, `smb`, `ftp` (readonly), `nfs`, `http` or `https`
+* `PROTOCOL` (string) ... Possible values are `afp`, `smb`, `ftp` (readonly), `nfs`, `http` or `https`
 
-`ACCOUNT` (string) ... see `ACCOUNT`
+* `ACCOUNT` (string) ... see `ACCOUNT`
 
-`SERVER` (string) ... Full qualified server name
+* `SERVER` (string) ... Full qualified server name
 
-`SHARE` (string) ... The name of the share to mount
+* `SHARE` (string) ... The name of the share to mount
 
 
 
-Prerequesites
+## Prerequesites
 ```bash
 chown ${USER}:staff ${HOME}/Library/Preferences/it.niemetz.automount.plist
 chmod 644 ${USER}/Library/Preferences/it.niemetz.automount.plist
