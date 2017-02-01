@@ -1,20 +1,27 @@
-The script `/usr/local/bin/automount.sh --mountall` is executed at login and on any change of network settings
+# Startup
 
-Prerequisites
+The script `/usr/local/bin/automount.sh --mountall` is executed at 
+* login
+* any change of network settings
+but only when network is up and running
+
+## Prerequisites
 ```bash
 chown ${USER}:staff ${HOME}/Library/LaunchAgents/it.niemetz.automount.plist
 chmod 644 ${USER}/Library/LaunchAgents/it.niemetz.automount.plist
 ```
 
-To install the LaunchAgent
+## To install the LaunchAgent
 
 ```bash
 launchctl load -w ${USER}/Library/LaunchAgents/it.niemetz.automount.plist
 ```
 
 
-To uninstall the LaunchAgent
+## To uninstall the LaunchAgent
 
-`launchctl load -w ${USER}/Library/LaunchAgents/it.niemetz.automount.plist`
+```bash
+launchctl load -w ${USER}/Library/LaunchAgents/it.niemetz.automount.plist
+```
 
 
