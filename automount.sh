@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-DEBUG="false"
+DEBUG="true"
 if [ "${DEBUG}" == "false" ]; then
 	set +xv
 	ExpectDebug="log_user 0"
@@ -93,13 +93,7 @@ declare -r LOGINNAME LOGINID LOGINPRIMARYGROUPID LOGINHOME LAUNCHASUSER
 # case $(ps -o state= -p ${$}) in
 if [ -t 0 ]; then
 		# interactive shell (not started from launch daemon)
-<<<<<<< HEAD
-		declare -ri INTERACTIVE=${YES}
-		# Log the message to standard error
-		declare -r LOGGEROPTION="-s"
-=======
 		declare -ri BACKGROUND=${NO}
->>>>>>> dev
 else
 		# background shell
 		declare -ri BACKGROUND=${YES}
@@ -115,10 +109,6 @@ declare -r LOCK_APN="${TMP_APN}/${SCRIPTNAME}.lock"
 # lock file (absolute file name)
 declare -r LOCK_AFN="${LOCK_APN}/pid"
 # log levels
-<<<<<<< HEAD
-#"Emergency" "Alert" "Critical" "Error" "Warning" "Notice" "Info" "Debug"
-=======
->>>>>>> dev
 declare -a LOG_LEVEL
 declare -r LOG_EMERGENCY=${#LOG_LEVEL[@]}
 LOG_LEVEL[${#LOG_LEVEL[@]}]="Emergency"
@@ -189,14 +179,10 @@ function log {
 		case ${1} in
 				-p|--priority)
 					if [[ -n "${2}" && "${2:0:1}" != "--" && "${2:0:1}" != "-" ]]; then
-<<<<<<< HEAD
-						_Priority="${2}"
-=======
 						if ! _Priority=${2} 2>/dev/null; then
 							printf 'ERROR: "%s" requires a numeric option argument.\n' "${1}" >&2
 							exit 1
 						fi
->>>>>>> dev
 						shift
 					else
 						printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
@@ -204,14 +190,10 @@ function log {
 					fi
 					;;
 				--priority=?*)
-<<<<<<< HEAD
-					_Priority=${1#*=}
-=======
 					if ! _Priority=${1#*=} 2>/dev/null; then
 						printf 'ERROR: "%s" requires a numeric option argument.\n' "${1}" >&2
 						exit 1
 					fi
->>>>>>> dev
 					;;
 				--priority=)
 					printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
@@ -232,11 +214,7 @@ function log {
 	set -- "${1:-$(</dev/stdin)}" "${@:2}"
 
 	if [ ${_Priority} -le 3 ]; then
-<<<<<<< HEAD
-		echo "ERROR ${1}" >&2
-=======
 		echo "${1}" >&2
->>>>>>> dev
 	else
 		echo "${1}"
 	fi
@@ -352,7 +330,7 @@ function mountAll {
 			Account="${Account:-${CommonAccount}}"
 			Server="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Server" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 			Share="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Share" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-			if [[ -n "${Protocol}" && -n "${Account}" && -n "${Server}" && -n "${Share}" ]] && ! mount | egrep -s -q "//.*${Server}/(${Share})? on /Volumes/${Share} \(.*, mounted by ${LOGINNAME}\)$" 2>/dev/null; then
+			if [[ -n "${Protocol}" && -n "${Account}" && -n "${Server}" && -n "${Share}" ]] && ! mount | egrep -s -q "//.*${Server}/(${Share})? on /Volumes/${Share} \(.*(, mounted by ${LOGINNAME})?\)$" 2>/dev/null; then
 				IsInValidRange=${TRUE}
 				if [ -n "${ValidIPRanges}" ]; then
 					IsInValidRange=${FALSE}
@@ -444,27 +422,16 @@ function mountAll {
 							RC=${?}
 							;;
 						*)
-<<<<<<< HEAD
-							log -p ${LOG_ERROR} "Unknown protocol ${Protocol}"
-=======
 							log --priority=${LOG_ERROR} "Unknown protocol ${Protocol}"
->>>>>>> dev
 							((Idx++))
 							continue
 							;;
 					esac
 					if [ ${RC} -eq ${SUCCESS} ]; then
-<<<<<<< HEAD
-						log -p ${LOG_INFO} "${Share} mounted successfully"
-						((MountedShares++))
-					else
-						log -p ${LOG_ERROR} "mount of ${Share} failed (RC=${RC}, RV=${RV})"
-=======
 						log --priority=${LOG_INFO} "${Share} mounted successfully"
 						((MountedShares++))
 					else
 						log --priority=${LOG_ERROR} "mount of ${Share} failed (RC=${RC}, RV=${RV})"
->>>>>>> dev
 					fi
 					EC=$((EC||RC))
 				else
@@ -479,23 +446,14 @@ function mountAll {
 	fi
 	if [ ${EC} -eq ${SUCCESS} ]; then
 		if [ ${MountedShares} -eq ${Idx} ]; then
-<<<<<<< HEAD
-			log -p ${LOG_INFO} "automount runned successfully."
-=======
 			log --priority=${LOG_INFO} "automount runned successfully."
->>>>>>> dev
 		fi
 		if [ ${BACKGROUND} -eq ${YES} ]; then
 			${LAUNCHASUSER} /usr/bin/osascript -e "display notification \"automount runned successfully.\" with title \"automount\" subtitle \"\""
 		fi
 	else
-<<<<<<< HEAD
-		log -p ${LOG_ERROR} "automount runned with errors."
-		if [ ${INTERACTIVE} -eq ${NO} ]; then
-=======
 		log --priority=${LOG_ERROR} "automount runned with errors."
 		if [ ${BACKGROUND} -eq ${YES} ]; then
->>>>>>> dev
 			${LAUNCHASUSER} /usr/bin/osascript -e "display notification \"automount runned with errors.\" with title \"automount\" subtitle \"\""
 		fi
 	fi
@@ -530,32 +488,15 @@ function addPassword {
 		"${_AccountHomeDirectory}"/Library/Keychains/login.keychain 2>&1)"
 	_RC=${?}
 
-<<<<<<< HEAD
-	if [ ${RC} -eq ${SUCCESS} ]; then
-		log -p ${LOG_INFO} "successfully added password to keychain."
-	else
-		log -p ${LOG_ERROR} "error adding password to keychain. (RC=${RC}, RV=${RV})"
-=======
 	if [ ${_RC} -eq ${SUCCESS} ]; then
 		log --priority=${LOG_INFO} "successfully added password to keychain."
 	else
 		log --priority=${LOG_ERROR} "error adding password to keychain. (RC=${_RC}, RV=${_RV})"
->>>>>>> dev
 	fi
 	exit ${_RC}
 }
 
 function create_lock {
-<<<<<<< HEAD
-	if ! { mkdir "${LOCK_APN}" && echo "${$}" > "${LOCK_AFN}"; } 2>/dev/null; then
-		_RunningPID="$(cat "${LOCK_AFN}")"
-		if RV="$(pgrep -f -l -F "${LOCK_AFN}" "${SCRIPT_FN}")"; then
-			log -p ${LOG_ERROR} "${SCRIPT_FN} is already running${_RunningPID:+ with PID ${_RunningPID}}"
-			exit 1
-		else
-			if ! { rm -rf "${LOCK_APN}" && mkdir "${LOCK_APN}" && echo "${$}" > "${LOCK_AFN}"; } 2>/dev/null; then
-				log -p ${LOG_ERROR} "Could not create \"${LOCK_AFN}\", exiting"
-=======
 	local _RV
 	local -i _RC=${TRUE}
 
@@ -579,7 +520,6 @@ function create_lock {
 			_RC=${?}
 			if [ ${_RC} -ne ${SUCCESS} ]; then
 				log --priority=${LOG_ERROR} "Could not create \"${LOCK_AFN}\", exiting|RC=${_RC}|RV=${_RV}"
->>>>>>> dev
 				exit 1
 			fi
 		fi
@@ -590,14 +530,7 @@ function create_lock {
 # catch traps
 trap 'cleanup' SIGHUP SIGINT SIGQUIT SIGTERM EXIT
 create_lock
-<<<<<<< HEAD
-log -p ${LOG_INFO} "start"
-sleep 10
-log -p ${LOG_ERROR} "error"
-exit
-=======
 
->>>>>>> dev
 while :; do
 	case ${1} in
 			-h|-\?|--help) # Call a "showUsage" function to display a synopsis, then exit.
