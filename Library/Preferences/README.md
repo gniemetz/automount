@@ -2,9 +2,9 @@
 
 All key beginning with `COMMON` are standard values and can be overridden in the `Mountlist` array with the corresponding key
 
-* `COMMONMAXRETRYINSECONDS` (numeric) ... How long to try to reach the server
+* `COMMONMAXRETRYINSECONDS` (numeric) ... How long to try to reach the server (ping)
 
-* `COMMONVALIDIPRANGES` (string, separated by comma) ... Only try to mount in the given networks
+* `COMMONVALIDIPRANGES` (string, separated by comma) ... Only try to mount when Mac is in the given networks
 
 * `COMMONACCOUNT` (string) ... The account to connect to the share with
 
