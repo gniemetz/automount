@@ -13,7 +13,7 @@ Try automount!
 
 ## Installation
 
-Drop the `automount.sh` in /usr/local/bin, define the shares you want to mount in `~/Library/Preferences/it.niemetz.automount.plist` and set up a LaunchAgent with `~/Library/LauchAgents/it.niemetz.automount.plist`
+Drop `automount.sh` into `/usr/local/bin`, define the shares you want to mount in `~/Library/Preferences/it.niemetz.automount.plist` and set up a LaunchAgent with `~/Library/LauchAgents/it.niemetz.automount.plist`
 
 Look into the `Library` folders for further documentation
 
