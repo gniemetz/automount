@@ -2,34 +2,50 @@
 
 All key beginning with `COMMON` are standard values and can be overridden in the `Mountlist` array with the corresponding key
 
-* `COMMONMAXRETRYINSECONDS` (numeric) ... How long to try to reach the server (ping)
+* `COMMONMAXRETRYINSECONDS` (numeric, optional) ... How long in seconds to try to reach the server (ping)
 
-* `COMMONVALIDIPRANGES` (string, separated by comma) ... Only try to mount when Mac is in the given networks
+If not set MAXRETRYINSECONDS defined in automount.sh is used (Standard: 10 seconds)
 
-* `COMMONACCOUNT` (string) ... The account to connect to the share with
+* `COMMONVALIDIPRANGES` (string, separated by comma, optional) ... Only try to mount when Mac is in the given networks
 
-* `COMMONMOUNTOPTIONS` (string, separated by comma) ... Mount options to use on share
+* `COMMONACCOUNT` (string, optional) ... The account to connect to the share with
+
+If not set LOGINUSER is used
+
+* `COMMONMOUNTOPTIONS` (string, separated by comma, optional) ... Mount options to use on share
+
+If not set MOUNTOPTIONS defined in automount.sh is used (Standard: nodev,nosuid)
 
 
 # Specific options
 
 In the `Mountlist` array you define the mounts to process
 
-* `MAXRETRYINSECONDS` (numeric) ... see `COMMONMAXRETRYINSECONDS`
+* `MAXRETRYINSECONDS` (numeric, optional) ... see `COMMONMAXRETRYINSECONDS`
 
-* `VALIDIPRANGES` (string, separated by comma) ... see `VALIDIPRANGES`
+If not set COMMONMAXRETRYINSECONDS is used
 
-* `MOUNTOPTIONS` (string, separated by comma) ... see `MOUNTOPTIONS`
+* `VALIDIPRANGES` (string, separated by comma, optional) ... see `VALIDIPRANGES`
 
-* `PROTOCOL` (string) ... Possible values are `afp`, `smb`, `ftp` (readonly), `nfs`, `http` or `https`
+If not set COMMONVALIDIPRANGES is used
 
-* `ACCOUNT` (string) ... see `ACCOUNT`
+* `MOUNTOPTIONS` (string, separated by comma, optional) ... see `MOUNTOPTIONS`
 
-* `SERVER` (string) ... Full qualified server name
+If not set COMMONMOUNTOPTIONS is used
 
-* `SHARE` (string) ... The name of the share to mount
+* `PROTOCOL` (string, mandatory) ... Possible values are `afp`, `smb`, `ftp` (readonly), `nfs`, `http` or `https`
 
+* `ACCOUNT` (string, mandatory) ... see `ACCOUNT`
 
+If not set COMMONACCOUNT is used
+
+* `SERVER` (string, mandatory) ... Full qualified server name
+
+* `SHARE` (string, mandatory) ... The name of the share to mount
+
+* `MOUNTPOINT` (string, optional) ... The name of the mountpoint
+
+If set /Volumes/MOUNTPOINT is used to mount the share, else /Volumes/SHARE
 
 ## Prerequesites
 ```bash
