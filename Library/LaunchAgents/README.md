@@ -22,7 +22,7 @@ launchctl load -w ${USER}/Library/LaunchAgents/it.niemetz.automount.plist
 ## To uninstall the LaunchAgent
 
 ```bash
-launchctl load -w ${USER}/Library/LaunchAgents/it.niemetz.automount.plist
+launchctl unload -w ${USER}/Library/LaunchAgents/it.niemetz.automount.plist
 ```
 
 

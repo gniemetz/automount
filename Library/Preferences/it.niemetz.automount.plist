@@ -3,30 +3,32 @@
 <plist version="1.0">
 <dict>
 	<key>CommonMaxRetryInSeconds</key>
-	<integer>COMMONMAXRETRYINSECONDS (eg. 30)</integer>
+	<integer>COMMONMAXRETRYINSECONDS (optional, eg. 30)</integer>
 	<key>CommonValidIPRanges</key>
-	<string>COMMONVALIDIPRANGES (separated by comma, eg. 10.0.0,192.168.0)</string>
+	<string>COMMONVALIDIPRANGES (optional, separated by comma, eg. 10.0.0,192.168.0)</string>
 	<key>CommonAccount</key>
-	<string>COMMONACCOUNT</string>
+	<string>COMMONACCOUNT (optional)</string>
 	<key>CommonMountOptions</key>
-	<string>COMMONMOUNTOPTIONS (separated by comma, eg. nodev,nosuid)</string>
+	<string>COMMONMOUNTOPTIONS (optional, separated by comma, eg. nodev,nosuid)</string>
 	<key>Mountlist</key>
 	<array>
 		<dict>
 			<key>MaxRetryInSeconds</key>
-			<integer>MAXRETRYINSECONDS</integer>
+			<integer>MAXRETRYINSECONDS (optional)</integer>
 			<key>ValidIPRanges</key>
-			<string>VALIDIPRANGES (separated by comma, eg. 10.0.0,192.168.0)</string>
+			<string>VALIDIPRANGES (optional, separated by comma, eg. 10.0.0,192.168.0)</string>
 			<key>MountOptions</key>
-			<string>MOUNTOPTIONS</string>
+			<string>MOUNTOPTIONS (optional)</string>
 			<key>Protocol</key>
-			<string>PROTOCOL (afp/smb/ftp/nfs/http/https)</string>
+			<string>PROTOCOL (mandatory, possible values are afp/smb/ftp/nfs/http/https)</string>
 			<key>Account</key>
-			<string>ACCOUNT</string>
+			<string>ACCOUNT (optional)</string>
 			<key>Server</key>
-			<string>SERVER</string>
+			<string>SERVER (mandatory)</string>
 			<key>Share</key>
-			<string>SHARE</string>
+			<string>SHARE (mandatory)</string>
+			<key>MountPoint</key>
+			<string>MOUNTPOINT (optional)</string>
 		</dict>
 	</array>
 </dict>

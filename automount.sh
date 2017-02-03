@@ -132,7 +132,7 @@ declare -r AUTOMOUNTPLIST_AFN="${LOGINHOME}/Library/Preferences/it.niemetz.autom
 # login keychain (absolute file name)
 declare -r LOGINKEYCHAIN_AFN="${LOGINHOME}/Library/Keychains/login.keychain"
 # max pings
-declare -ir MAXRETRYINSECONDS=30
+declare -ir MAXRETRYINSECONDS=10
 # mount options
 declare -r MOUNTOPTIONS="nodev,nosuid"
 # map protocol to value in keychain
@@ -161,6 +161,7 @@ Protocol=""
 Account=""
 Server=""
 Share=""
+MountPoint=""
 declare -i MountedShares=0
 # Action to do
 Action=""
@@ -330,7 +331,8 @@ function mountAll {
 			Account="${Account:-${CommonAccount}}"
 			Server="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Server" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 			Share="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Share" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-			if [[ -n "${Protocol}" && -n "${Account}" && -n "${Server}" && -n "${Share}" ]] && ! mount | egrep -s -q "//.*${Server}/(${Share})? on /Volumes/${Share} \(.*, mounted by ${LOGINNAME}\)$" 2>/dev/null; then
+			MountPoint="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MountPoint" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+			if [[ -n "${Protocol}" && -n "${Account}" && -n "${Server}" && -n "${Share}" ]] && ! mount | egrep -s -q "//.*${Server}/(${Share})? on /Volumes/${Share} \(.*(, mounted by ${LOGINNAME})?\)$" 2>/dev/null; then
 				IsInValidRange=${TRUE}
 				if [ -n "${ValidIPRanges}" ]; then
 					IsInValidRange=${FALSE}
@@ -354,7 +356,7 @@ function mountAll {
 						continue
 					fi
 						
-					MountPoint="${Share##*/}"
+					MountPoint="${MountPoint:-${Share##*/}}"
 					if [ ! -d "/Volumes/${MountPoint}" ]; then
 						RV="$( { mkdir -p ${Verbose} "/Volumes/${MountPoint}" && chown "${LOGINNAME}:${LOGINPRIMARYGROUPID}" "/Volumes/${MountPoint}"; } 2>&1 )"
 						RC=${?}
@@ -435,7 +437,7 @@ function mountAll {
 					fi
 					EC=$((EC||RC))
 				else
-					log --priority=${LOG_ERROR} "Could not create \"/Volumes/${MountPoint}\" (RC=${RC}, RV=${RV})"
+					log --priority=${LOG_ERROR} "Not in network range \"${ValidIPRanges}\" for share \"${Protocol}://${Server}/${Share}\""
 				fi
 			fi
 			((Idx++))
