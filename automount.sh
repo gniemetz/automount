@@ -36,7 +36,7 @@ fi
 
 # CONSTANTS
 declare -r SCRIPTLASTMOD="2017-02-10"
-declare -r SCRIPTVERSION="0.90.2"
+declare -r SCRIPTVERSION="0.90.3"
 declare -ri YES=0
 declare -ri SUCCESS=${YES}
 declare -ri TRUE=${YES}
@@ -305,7 +305,7 @@ function getPasswordFromKeychain {
 	_RC=${?}
 
 	if [ ${_RC} -ne ${SUCCESS} ]; then
-		log --priority=${LOG_ERROR} "getPasswordFromKeychain failed (RC=${_RC}, RV=${_RV})"
+		log --priority=${LOG_ERROR} "getPasswordFromKeychain failed (RC=${_RC})"
 	fi
 	return ${_RC}
 }
@@ -443,7 +443,7 @@ function mountAll {
 			((Idx++))
 		done
 	else
-		log -p${LOG_ERROR} "${AUTOMOUNTPLIST_AFN} or ${LOGINKEYCHAIN_AFN} are missing"
+		log --priority=${LOG_ERROR} "${AUTOMOUNTPLIST_AFN} or ${LOGINKEYCHAIN_AFN} are missing"
 		exit 1
 	fi
 	if [ ${EC} -eq ${SUCCESS} ]; then
