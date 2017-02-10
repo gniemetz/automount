@@ -35,8 +35,8 @@ fi
 #chmod 755 /usr/local/bin/automount.sh
 
 # CONSTANTS
-declare -r SCRIPTLASTMOD="2017-02-01"
-declare -r SCRIPTVERSION="0.90.1"
+declare -r SCRIPTLASTMOD="2017-02-10"
+declare -r SCRIPTVERSION="0.90.2"
 declare -ri YES=0
 declare -ri SUCCESS=${YES}
 declare -ri TRUE=${YES}
@@ -416,7 +416,7 @@ function mountAll {
 							RC=${?}
 							;;
 						smb)
-							RV="$(mount_smb -o soft${MountOptions:+,${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "/Volumes/${MountPoint}" 2>&1)"
+							RV="$(mount_smbfs -o soft${MountOptions:+,${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "/Volumes/${MountPoint}" 2>&1)"
 							RC=${?}
 							;;
 						cifs)
