@@ -1,34 +1,53 @@
-All key beginning with `COMMON` are standard values and can be overridden on the `Mountlist` array with the corresponding key
+# Common options
 
-`COMMONMAXRETRYINSECONDS` (numeric) ... How long to try to reach the server
+All key beginning with `COMMON` are standard values and can be overridden in the `Mountlist` array with the corresponding key
 
-`COMMONVALIDIPRANGES` (string, separated by comma) ... Only try to mount in the given networks
+* `COMMONMAXRETRYINSECONDS` (numeric, optional) ... How long in seconds to try to reach the server (ping)
 
-`COMMONACCOUNT` (string) ... The account to connect to the share with
+If not set `MAXRETRYINSECONDS` defined in automount.sh is used (Standard: 10 seconds)
 
-`COMMONMOUNTOPTIONS` (string, separated by comma) ... Mount options to use on share
+* `COMMONVALIDIPRANGES` (string, separated by comma, optional) ... Only try to mount when Mac is in the given network(s)
 
+* `COMMONACCOUNT` (string, optional) ... The account to connect to the share with
 
+If not set `LOGINUSER` is used
 
-In the `Mountlist` array you define the mounts to process
+* `COMMONMOUNTOPTIONS` (string, separated by comma, optional) ... Mount options to use on share
 
-`MAXRETRYINSECONDS` (numeric) ... see `COMMONMAXRETRYINSECONDS`
-
-`VALIDIPRANGES` (string, separated by comma) ... see `VALIDIPRANGES`
-
-`MOUNTOPTIONS` (string, separated by comma) ... see `MOUNTOPTIONS`
-
-`PROTOCOL` (string) ... Possible values are `afp`, `smb`, `ftp` (readonly), `nfs`, `http` or `https`
-
-`ACCOUNT` (string) ... see `ACCOUNT`
-
-`SERVER` (string) ... Full qualified server name
-
-`SHARE` (string) ... The name of the share to mount
+If not set MOUNTOPTIONS defined in automount.sh is used (Standard: nodev,nosuid)
 
 
+# Specific options
 
-Prerequesites
+In the `Mountlist` array you define the share(s) to process
+
+* `MAXRETRYINSECONDS` (numeric, optional) ... see `COMMONMAXRETRYINSECONDS`
+
+If not set `COMMONMAXRETRYINSECONDS` is used
+
+* `VALIDIPRANGES` (string, separated by comma, optional) ... see `VALIDIPRANGES`
+
+If not set `COMMONVALIDIPRANGES` is used
+
+* `MOUNTOPTIONS` (string, separated by comma, optional) ... see `MOUNTOPTIONS`
+
+If not set `COMMONMOUNTOPTIONS` is used
+
+* `PROTOCOL` (string, mandatory) ... Possible values are `afp`, `smb`, `ftp` (readonly), `nfs`, `http` or `https`
+
+* `ACCOUNT` (string, mandatory) ... see `ACCOUNT`
+
+If not set `COMMONACCOUNT` is used
+
+* `SERVER` (string, mandatory) ... Full qualified server name
+
+* `SHARE` (string, mandatory) ... The name of the share to mount
+
+* `MOUNTPOINT` (string, optional) ... The name of the mountpoint
+
+If set /Volumes/MOUNTPOINT is used to mount the share, else /Volumes/SHARE
+
+## Prerequesites
 ```bash
 chown ${USER}:staff ${HOME}/Library/Preferences/it.niemetz.automount.plist
 chmod 644 ${USER}/Library/Preferences/it.niemetz.automount.plist

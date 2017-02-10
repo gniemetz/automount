@@ -4,21 +4,23 @@
 <dict>
 	<key>Label</key>
 	<string>it.niemetz.automount</string>
-	<key>ProgramArguments</key>
-	<array>
-		<string>/usr/local/bin/automount.sh</string>
-		<string>--mountall</string>
-	</array>
+	<key>LimitLoadToSessionType</key>
+	<string>Aqua</string>
 	<key>RunAtLoad</key>
 	<true/>
-	<key>WatchPaths</key>
-	<array>
-		<string>/Library/Preferences/SystemConfiguration</string>
-	</array>
 	<key>KeepAlive</key>
 	<dict>
 		<key>NetworkState</key>
 		<true/>
 	</dict>
+	<key>WatchPaths</key>
+	<array>
+		<string>/Library/Preferences/SystemConfiguration</string>
+	</array>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/local/bin/automount.sh</string>
+		<string>--mountall</string>
+	</array>
 </dict>
 </plist>
