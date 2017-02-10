@@ -45,6 +45,10 @@ declare -ri NO=1
 declare -ri ERROR=${NO}
 declare -ri FALSE=${NO}
 declare -ri MISSING=${NO}
+# os x version array major minor patch
+declare -air OSVERSION=( $(sw_vers | awk -F'[: |.]' '/ProductVersion/ { printf("%d %d %d", $2, $3, $4) }') )
+# os x version as integer 
+declare -ir OSVERSION_INTEGER=10#$(printf '%02d%02d%02d' "${OSVERSION[0]}" "${OSVERSION[1]}" "${OSVERSION[2]}")
 # script path name
 SCRIPT_PN="${0%/*}"
 if [ "${SCRIPT_PN}" == "." ]; then
@@ -64,28 +68,28 @@ if [ "${SCRIPTNAME}" == "" ]; then
 fi
 declare -r SCRIPT_PN SCRIPTNAME SCRIPTEXTENSION
 # user name
-declare -r USERNAME="$(id -p | awk '/^uid/ { print $2 }')"
+declare -r USERNAME="$(id -p | awk -F'	' '/^uid/ { print $2 }')"
 # user id
-declare -r USERID="$(dscl . read /Users/${USERNAME} UniqueID | awk -F': ' '{ print $2 }')"
+declare -ir USERID="$(dscl . read /Users/${USERNAME} UniqueID | awk -F': ' '{ print $2 }')"
 # user primary group id
-declare -r USERPRIMARYGROUPID="$(dscl . read /Users/${USERNAME} PrimaryGroupID | awk -F': ' '{ print $2 }')"
+declare -ir USERPRIMARYGROUPID="$(dscl . read /Users/${USERNAME} PrimaryGroupID | awk -F': ' '{ print $2 }')"
 # user home
 declare -r USERHOME="$(dscl . read /Users/${USERNAME} NFSHomeDirectory | awk -F': ' '{ print $2 }')"
 # login name
-LOGINNAME="$(id -p | awk '/^login/ { print $2 }')"
+LOGINNAME="$(id -p | awk -F'	' '/^login/ { print $2 }')"
 if [ -z "${LOGINNAME}" ]; then
 	LOGINNAME="${USERNAME}"
 	# login id
-	LOGINID="${USERID}"
+	declare -i LOGINID="${USERID}"
 	# login primary group id
-	LOGINPRIMARYGROUPID=${USERPRIMARYGROUPID}
+	declare -i LOGINPRIMARYGROUPID=${USERPRIMARYGROUPID}
 	# login home
 	LOGINHOME="${USERHOME}"
 	# launch as user
 	LAUNCHASUSER=""
 else
-	LOGINID="$(dscl . read /Users/${LOGINNAME} UniqueID | awk -F': ' '{ print $2 }')"
-	LOGINPRIMARYGROUPID="$(dscl . read /Users/${LOGINNAME} PrimaryGroupID | awk -F': ' '{ print $2 }')"
+	declare -i LOGINID="$(dscl . read /Users/${LOGINNAME} UniqueID | awk -F': ' '{ print $2 }')"
+	declare -i LOGINPRIMARYGROUPID="$(dscl . read /Users/${LOGINNAME} PrimaryGroupID | awk -F': ' '{ print $2 }')"
 	LOGINHOME="$(dscl . read /Users/${LOGINNAME} NFSHomeDirectory | awk -F': ' '{ print $2 }')"
 	LAUNCHASUSER="launchctl asuser ${LOGINID} chroot -u ${LOGINID} -g ${LOGINPRIMARYGROUPID} /"
 fi
@@ -110,23 +114,23 @@ declare -r LOCK_APN="${TMP_APN}/${SCRIPTNAME}.lock"
 declare -r LOCK_AFN="${LOCK_APN}/pid"
 # log levels
 declare -a LOG_LEVEL
-declare -r LOG_EMERGENCY=${#LOG_LEVEL[@]}
+declare -ir LOG_EMERGENCY=${#LOG_LEVEL[@]}
 LOG_LEVEL[${#LOG_LEVEL[@]}]="Emergency"
-declare -r LOG_ALERT=${#LOG_LEVEL[@]}
+declare -ir LOG_ALERT=${#LOG_LEVEL[@]}
 LOG_LEVEL[${#LOG_LEVEL[@]}]="Alert"
-declare -r LOG_CRITICAL=${#LOG_LEVEL[@]}
+declare -ir LOG_CRITICAL=${#LOG_LEVEL[@]}
 LOG_LEVEL[${#LOG_LEVEL[@]}]="Critical"
-declare -r LOG_ERROR=${#LOG_LEVEL[@]}
+declare -ir LOG_ERROR=${#LOG_LEVEL[@]}
 LOG_LEVEL[${#LOG_LEVEL[@]}]="Error"
-declare -r LOG_WARNING=${#LOG_LEVEL[@]}
+declare -ir LOG_WARNING=${#LOG_LEVEL[@]}
 LOG_LEVEL[${#LOG_LEVEL[@]}]="Warning"
-declare -r LOG_NOTICE=${#LOG_LEVEL[@]}
+declare -ir LOG_NOTICE=${#LOG_LEVEL[@]}
 LOG_LEVEL[${#LOG_LEVEL[@]}]="Notice"
-declare -r LOG_INFO=${#LOG_LEVEL[@]}
+declare -ir LOG_INFO=${#LOG_LEVEL[@]}
 LOG_LEVEL[${#LOG_LEVEL[@]}]="Info"
-declare -r LOG_DEBUG=${#LOG_LEVEL[@]}
+declare -ir LOG_DEBUG=${#LOG_LEVEL[@]}
 LOG_LEVEL[${#LOG_LEVEL[@]}]="Debug"
-declare -r LOG_LEVEL
+declare -ir LOG_LEVEL
 # automount plist (absolute file name)
 declare -r AUTOMOUNTPLIST_AFN="${LOGINHOME}/Library/Preferences/it.niemetz.automount.plist"
 # login keychain (absolute file name)
@@ -137,6 +141,14 @@ declare -ir MAXRETRYINSECONDS=10
 declare -r MOUNTOPTIONS="nodev,nosuid"
 # map protocol to value in keychain
 declare -ra PROTOCOLMAPPING=( 'afp="afp "' 'cifs="cifs"' 'ftp="ftp "' 'http="http"' 'https="htps"' 'smb="smb "' )
+# ping -t timeout
+declare -ir PINGTIMEOUT=1
+if [ ${OSVERSION_INTEGER} -ge 101200 ]; then
+	# mountpoint absolute pathname
+	MOUNTPOINT_APN="/tmp"
+else
+	MOUNTPOINT_APN="/Volumes"
+fi
 
 # Global variables
 # index counter
@@ -312,42 +324,43 @@ function getPasswordFromKeychain {
 
 function mountAll {
 	if [ -s "${AUTOMOUNTPLIST_AFN}" ] && [ -s "${LOGINKEYCHAIN_AFN}" ] && IPAddresses=( $(getIPAddresses) ); then
-		declare -i CommonMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print CommonMaxRetryInSeconds" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-		CommonMaxRetryInSeconds="${CommonMaxRetryInSeconds:-${MAXRETRYINSECONDS}}"
+		CommonMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print CommonMaxRetryInSeconds" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+		declare -i CommonMaxRetryInSeconds="${CommonMaxRetryInSeconds:-${MAXRETRYINSECONDS}}"
 		CommonValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print CommonValidIPRanges" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 		CommonMountOptions="$(/usr/libexec/PlistBuddy -c "Print CommonMountOptions" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 		CommonMountOptions="${CommonMountOptions:-${MOUNTOPTIONS}}"
 		CommonAccount="$(/usr/libexec/PlistBuddy -c "Print CommonAccount" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 		CommonAccount="${CommonAccount:-${LOGINNAME}}"
 		while /usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}" "${AUTOMOUNTPLIST_AFN}" >/dev/null 2>&1; do
+			unset ValidIPRanges MountOptions MaxRetryInSeconds Protocol Account Server Share MountPoint
 			ValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:ValidIPRanges" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 			ValidIPRanges="${ValidIPRanges:-${CommonValidIPRanges}}"
-			MountOptions="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MountOptions" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+			MountOptions=$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MountOptions" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)
 			MountOptions="${MountOptions:-${CommonMountOptions}}"
 			MaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MaxRetryInSeconds" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-			MaxRetryInSeconds="${MaxRetryInSeconds:-${CommonMaxRetryInSeconds}}"
+			declare -i MaxRetryInSeconds="${MaxRetryInSeconds:-${CommonMaxRetryInSeconds}}"
 			Protocol="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Protocol" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 			Account="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Account" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 			Account="${Account:-${CommonAccount}}"
 			Server="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Server" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 			Share="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Share" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 			MountPoint="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MountPoint" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-			if [[ -n "${Protocol}" && -n "${Account}" && -n "${Server}" && -n "${Share}" ]] && ! mount | egrep -s -q "//.*${Server}/(${Share})? on /Volumes/${Share} \(.*(, mounted by ${LOGINNAME})?\)$" 2>/dev/null; then
-				IsInValidRange=${TRUE}
+			if [[ -n "${Protocol}" && -n "${Account}" && -n "${Server}" && -n "${Share}" ]] && ! mount | egrep -s -q "//.*${Server}/(${Share})? on ${MOUNTPOINT_APN}/${Share} \(.*(, mounted by ${LOGINNAME})?\)$" 2>/dev/null; then
+				IsInValidRange=${YES}
 				if [ -n "${ValidIPRanges}" ]; then
-					IsInValidRange=${FALSE}
+					IsInValidRange=${NO}
 					for IPAddress in "${IPAddresses[@]}"; do
 						IPAddressPart="$(echo "${IPAddress}" | cut -d'.' -f1-3)"
 						if [[ "${ValidIPRanges}" =~ (^|,)"${IPAddressPart}"(,|$) ]]; then
-							IsInValidRange=${TRUE}
+							IsInValidRange=${YES}
 							break
 						fi
 					done
 				fi
 
-				if [ ${IsInValidRange} -eq ${TRUE} ]; then
+				if [ ${IsInValidRange} -eq ${YES} ]; then
 					Try=0
-					while ! RV="$(ping -c 1 -t 1 -o -q "${Server}" 2>&1)" && [ ${Try} -le ${MaxRetryInSeconds} ]; do
+					while ! RV="$(ping -c 1 -t ${PINGTIMEOUT} -o -q "${Server}" 2>&1)" && [ ${Try} -le ${MaxRetryInSeconds} ]; do
 						((Try++))
 					done
 					if [ ${Try} -gt ${MaxRetryInSeconds} ]; then
@@ -357,12 +370,12 @@ function mountAll {
 					fi
 						
 					MountPoint="${MountPoint:-${Share##*/}}"
-					if [ ! -d "/Volumes/${MountPoint}" ]; then
-						RV="$( { mkdir -p ${Verbose} "/Volumes/${MountPoint}" && chown "${LOGINNAME}:${LOGINPRIMARYGROUPID}" "/Volumes/${MountPoint}"; } 2>&1 )"
+					if [ ! -d "${MOUNTPOINT_APN}/${MountPoint}" ]; then
+						RV="$( { mkdir -p ${Verbose} "${MOUNTPOINT_APN}/${MountPoint}" && chown "${LOGINID}:${LOGINPRIMARYGROUPID}" "${MOUNTPOINT_APN}/${MountPoint}"; } 2>&1 )"
 						RC=${?}
 						if [ ${RC} -ne ${SUCCESS} ]; then
-							log --priority=${LOG_ERROR} "Could not create \"/Volumes/${MountPoint}\" (RC=${RC}, RV=${RV})"
-							rmdir "/Volumes/${MountPoint}" >/dev/null 2>&1
+							log --priority=${LOG_ERROR} "Could not create \"${MOUNTPOINT_APN}/${MountPoint}\" (RC=${RC}, RV=${RV})"
+							rmdir "${MOUNTPOINT_APN}/${MountPoint}" >/dev/null 2>&1
 							((Idx++))
 							continue
 						fi
@@ -373,7 +386,7 @@ function mountAll {
 							RV="$(expect -c '
 								set timeout 15
 								'"${ExpectDebug}"'
-								spawn /sbin/mount_webdav -s -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' /Volumes/'"${MountPoint}"'
+								spawn /sbin/mount_webdav -s -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
 								expect "name:" {
 									send "'"${Account}"'\r"
 								}
@@ -392,7 +405,7 @@ function mountAll {
 							RV="$(expect -c '
 								set timeout 15
 								'"${ExpectDebug}"'
-								spawn /sbin/mount_ftp -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' /Volumes/'"${MountPoint}"'
+								spawn /sbin/mount_ftp -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
 								expect "name:" {
 									send "'"${Account}"'\r"
 								}
@@ -408,19 +421,19 @@ function mountAll {
 							RC=${?}
 							;;
 						nfs)
-							RV="$(mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} "${Server}:/${Share}" "/Volumes/${MountPoint}" 2>&1)"
+							RV="$(mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} "${Server}:/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
 							RC=${?}
 							;;
 						afp)
-							RV="$(mount_afp -s ${MountOptions:+ -o ${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "/Volumes/${MountPoint}" 2>&1)"
+							RV="$(mount_afp -s ${MountOptions:+ -o ${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
 							RC=${?}
 							;;
 						smb)
-							RV="$(mount_smbfs -o soft${MountOptions:+,${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "/Volumes/${MountPoint}" 2>&1)"
+							RV="$(mount_smbfs -o soft${MountOptions:+,${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
 							RC=${?}
 							;;
 						cifs)
-							RV="$(mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "/Volumes/${MountPoint}" 2>&1)"
+							RV="$(mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
 							RC=${?}
 							;;
 						*)
@@ -521,7 +534,7 @@ function create_lock {
 			_RV="$( { rm -rf "${LOCK_APN}" && mkdir "${LOCK_APN}" && echo "${$}" > "${LOCK_AFN}"; } 2>&1 || false )"
 			_RC=${?}
 			if [ ${_RC} -ne ${SUCCESS} ]; then
-				log --priority=${LOG_ERROR} "Could not create \"${LOCK_AFN}\", exiting|RC=${_RC}|RV=${_RV}"
+				log --priority=${LOG_ERROR} "Could not create \"${LOCK_AFN}\", exiting (RC=${_RC}, RV=${_RV})"
 				exit 1
 			fi
 		fi
@@ -627,14 +640,14 @@ done
 
 case "${Action}" in
 	mountAll)
-		mountAll
+		${Action}
 		;;
 	addPassword)
 		if [[ -z "${Protocol}" || -z "${Server}" ]]; then
 			showUsage
 			exit
 		fi
-		addPassword
+		${Action}
 		;;
 	*)
 		showUsage
