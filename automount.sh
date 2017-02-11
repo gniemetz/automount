@@ -130,7 +130,7 @@ declare -ir LOG_INFO=${#LOG_LEVEL[@]}
 LOG_LEVEL[${#LOG_LEVEL[@]}]="Info"
 declare -ir LOG_DEBUG=${#LOG_LEVEL[@]}
 LOG_LEVEL[${#LOG_LEVEL[@]}]="Debug"
-declare -ir LOG_LEVEL
+declare -r LOG_LEVEL
 # automount plist (absolute file name)
 declare -r AUTOMOUNTPLIST_AFN="${LOGINHOME}/Library/Preferences/it.niemetz.automount.plist"
 # login keychain (absolute file name)
