@@ -35,8 +35,8 @@ fi
 #chmod 755 /usr/local/bin/automount.sh
 
 # CONSTANTS
-declare -r SCRIPTLASTMOD="2017-02-10"
-declare -r SCRIPTVERSION="0.90.3"
+declare -r SCRIPTLASTMOD="2017-02-11"
+declare -r SCRIPTVERSION="0.90.4"
 declare -ri YES=0
 declare -ri SUCCESS=${YES}
 declare -ri TRUE=${YES}
@@ -143,9 +143,9 @@ declare -r MOUNTOPTIONS="nodev,nosuid"
 declare -ra PROTOCOLMAPPING=( 'afp="afp "' 'cifs="cifs"' 'ftp="ftp "' 'http="http"' 'https="htps"' 'smb="smb "' )
 # ping -t timeout
 declare -ir PINGTIMEOUT=1
-if [ ${OSVERSION_INTEGER} -ge 101200 ]; then
+if [[ ${OSVERSION_INTEGER} -ge 101200 || ${LOGINID} -ne 0 ]]; then
 	# mountpoint absolute pathname
-	MOUNTPOINT_APN="/tmp"
+	MOUNTPOINT_APN="${LOGINHOME}/Volumes"
 else
 	MOUNTPOINT_APN="/Volumes"
 fi
@@ -371,7 +371,7 @@ function mountAll {
 						
 					MountPoint="${MountPoint:-${Share##*/}}"
 					if [ ! -d "${MOUNTPOINT_APN}/${MountPoint}" ]; then
-						RV="$( { mkdir -p ${Verbose} "${MOUNTPOINT_APN}/${MountPoint}" && chown "${LOGINID}:${LOGINPRIMARYGROUPID}" "${MOUNTPOINT_APN}/${MountPoint}"; } 2>&1 )"
+						RV="$( { mkdir -p ${Verbose} "${MOUNTPOINT_APN}/${MountPoint}" && chown "${LOGINID}:${LOGINPRIMARYGROUPID}" "${MOUNTPOINT_APN}/${MountPoint}" && chmod 755 "${MOUNTPOINT_APN}/${MountPoint}"; } 2>&1 )"
 						RC=${?}
 						if [ ${RC} -ne ${SUCCESS} ]; then
 							log --priority=${LOG_ERROR} "Could not create \"${MOUNTPOINT_APN}/${MountPoint}\" (RC=${RC}, RV=${RV})"
