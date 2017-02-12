@@ -35,8 +35,8 @@ fi
 #chmod 755 /usr/local/bin/automount.sh
 
 # CONSTANTS
-declare -r SCRIPTLASTMOD="2017-02-11"
-declare -r SCRIPTVERSION="0.90.4"
+declare -r SCRIPTLASTMOD="2017-02-12"
+declare -r SCRIPTVERSION="0.90.5"
 declare -ri YES=0
 declare -ri SUCCESS=${YES}
 declare -ri TRUE=${YES}
@@ -143,7 +143,7 @@ declare -r MOUNTOPTIONS="nodev,nosuid"
 declare -ra PROTOCOLMAPPING=( 'afp="afp "' 'cifs="cifs"' 'ftp="ftp "' 'http="http"' 'https="htps"' 'smb="smb "' )
 # ping -t timeout
 declare -ir PINGTIMEOUT=1
-if [[ ${OSVERSION_INTEGER} -ge 101200 || ${LOGINID} -ne 0 ]]; then
+if [[ ${OSVERSION_INTEGER} -ge 101200 && ${LOGINID} -ne 0 ]]; then
 	# mountpoint absolute pathname
 	MOUNTPOINT_APN="${LOGINHOME}/Volumes"
 else
@@ -152,9 +152,7 @@ fi
 
 # Global variables
 # index counter
-declare -i Idx=0
-# retry counter
-declare -i Try
+declare -i MountlistIndex
 # is ip in valid range
 declare -i IsInValidRange=${TRUE}
 # exit code
@@ -278,10 +276,11 @@ function getIPAddresses {
 	done
 
 	if [ -n "${_IPAddresses}" ]; then
-		echo "${_IPAddresses}"
-		return ${TRUE}
+		IPAddresses=( ${_IPAddresses} )
+		return ${SUCCESS}
 	else
-		return ${FALSE}
+		log --priority=${LOG_ERROR} "Could not get local IP address(es)"
+		return ${ERROR}
 	fi
 }
 
@@ -298,9 +297,9 @@ function getKeychainProtocol {
 
 	if [ -n "${_KeychainProtocol}" ]; then
 		echo "${_KeychainProtocol//\"/}"
-		return 0
+		return ${FOUND}
 	else
-		return 1
+		return ${MISSING}
 	fi
 }
 
@@ -322,145 +321,231 @@ function getPasswordFromKeychain {
 	return ${_RC}
 }
 
-function mountAll {
-	if [ -s "${AUTOMOUNTPLIST_AFN}" ] && [ -s "${LOGINKEYCHAIN_AFN}" ] && IPAddresses=( $(getIPAddresses) ); then
-		CommonMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print CommonMaxRetryInSeconds" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-		declare -i CommonMaxRetryInSeconds="${CommonMaxRetryInSeconds:-${MAXRETRYINSECONDS}}"
-		CommonValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print CommonValidIPRanges" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-		CommonMountOptions="$(/usr/libexec/PlistBuddy -c "Print CommonMountOptions" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-		CommonMountOptions="${CommonMountOptions:-${MOUNTOPTIONS}}"
-		CommonAccount="$(/usr/libexec/PlistBuddy -c "Print CommonAccount" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-		CommonAccount="${CommonAccount:-${LOGINNAME}}"
-		while /usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}" "${AUTOMOUNTPLIST_AFN}" >/dev/null 2>&1; do
-			unset ValidIPRanges MountOptions MaxRetryInSeconds Protocol Account Server Share MountPoint
-			ValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:ValidIPRanges" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-			ValidIPRanges="${ValidIPRanges:-${CommonValidIPRanges}}"
-			MountOptions=$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MountOptions" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)
-			MountOptions="${MountOptions:-${CommonMountOptions}}"
-			MaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MaxRetryInSeconds" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-			declare -i MaxRetryInSeconds="${MaxRetryInSeconds:-${CommonMaxRetryInSeconds}}"
-			Protocol="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Protocol" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-			Account="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Account" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-			Account="${Account:-${CommonAccount}}"
-			Server="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Server" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-			Share="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:Share" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-			MountPoint="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${Idx}:MountPoint" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-			if [[ -n "${Protocol}" && -n "${Account}" && -n "${Server}" && -n "${Share}" ]] && ! mount | egrep -s -q "//.*${Server}/(${Share})? on ${MOUNTPOINT_APN}/${Share} \(.*(, mounted by ${LOGINNAME})?\)$" 2>/dev/null; then
-				IsInValidRange=${YES}
-				if [ -n "${ValidIPRanges}" ]; then
-					IsInValidRange=${NO}
-					for IPAddress in "${IPAddresses[@]}"; do
-						IPAddressPart="$(echo "${IPAddress}" | cut -d'.' -f1-3)"
-						if [[ "${ValidIPRanges}" =~ (^|,)"${IPAddressPart}"(,|$) ]]; then
-							IsInValidRange=${YES}
-							break
-						fi
-					done
-				fi
+function pingServer {
+	# server to ping
+	local _Server="${1}"
+	# retry counter
+	local -i _Try=0
+	# return value
+	local _RV=""
 
-				if [ ${IsInValidRange} -eq ${YES} ]; then
-					Try=0
-					while ! RV="$(ping -c 1 -t ${PINGTIMEOUT} -o -q "${Server}" 2>&1)" && [ ${Try} -le ${MaxRetryInSeconds} ]; do
-						((Try++))
-					done
-					if [ ${Try} -gt ${MaxRetryInSeconds} ]; then
-						log --priority=${LOG_ERROR} "Could not ping ${Server} within ${MaxRetryInSeconds} (RC=${RC}, RV=${RV})"
-						((Idx++))
-						continue
-					fi
-						
-					MountPoint="${MountPoint:-${Share##*/}}"
-					if [ ! -d "${MOUNTPOINT_APN}/${MountPoint}" ]; then
-						RV="$( { mkdir -p ${Verbose} "${MOUNTPOINT_APN}/${MountPoint}" && chown "${LOGINID}:${LOGINPRIMARYGROUPID}" "${MOUNTPOINT_APN}/${MountPoint}" && chmod 755 "${MOUNTPOINT_APN}/${MountPoint}"; } 2>&1 )"
-						RC=${?}
-						if [ ${RC} -ne ${SUCCESS} ]; then
-							log --priority=${LOG_ERROR} "Could not create \"${MOUNTPOINT_APN}/${MountPoint}\" (RC=${RC}, RV=${RV})"
-							rmdir "${MOUNTPOINT_APN}/${MountPoint}" >/dev/null 2>&1
-							((Idx++))
-							continue
-						fi
-					fi
-							
-					case "${Protocol}" in
-						http|https)
-							RV="$(expect -c '
-								set timeout 15
-								'"${ExpectDebug}"'
-								spawn /sbin/mount_webdav -s -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
-								expect "name:" {
-									send "'"${Account}"'\r"
-								}
-								expect timeout {
-									exit 1
-								} "word:" {
-									send "'$(getPasswordFromKeychain)'\r"
-									exp_continue
-								} eof
-								catch wait result
-								exit [lindex $result 3]
-								' 2>&1)"
-							RC=${?}
-							;;
-						ftp)
-							RV="$(expect -c '
-								set timeout 15
-								'"${ExpectDebug}"'
-								spawn /sbin/mount_ftp -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
-								expect "name:" {
-									send "'"${Account}"'\r"
-								}
-								expect timeout {
-									exit 1
-								} "word:" {
-									send "'$(getPasswordFromKeychain)'\r"
-									exp_continue
-								} eof
-								catch wait result
-								exit [lindex $result 3]
-								' 2>&1)"
-							RC=${?}
-							;;
-						nfs)
-							RV="$(mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} "${Server}:/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
-							RC=${?}
-							;;
-						afp)
-							RV="$(mount_afp -s ${MountOptions:+ -o ${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
-							RC=${?}
-							;;
-						smb)
-							RV="$(mount_smbfs -o soft${MountOptions:+,${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
-							RC=${?}
-							;;
-						cifs)
-							RV="$(mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
-							RC=${?}
-							;;
-						*)
-							log --priority=${LOG_ERROR} "Unknown protocol ${Protocol}"
-							((Idx++))
-							continue
-							;;
-					esac
-					if [ ${RC} -eq ${SUCCESS} ]; then
-						log --priority=${LOG_INFO} "${Share} mounted successfully"
-						((MountedShares++))
-					else
-						log --priority=${LOG_ERROR} "mount of ${Share} failed (RC=${RC}, RV=${RV})"
-					fi
-					EC=$((EC||RC))
-				else
-					log --priority=${LOG_ERROR} "Not in network range \"${ValidIPRanges}\" for share \"${Protocol}://${Server}/${Share}\""
-				fi
-			fi
-			((Idx++))
+	if [ -n "${_Server}" ]; then
+		while ! _RV="$(ping -c 1 -t ${PINGTIMEOUT} -o -q "${_Server}" 2>&1)" && [ ${_Try} -le ${MaxRetryInSeconds} ]; do
+			((_Try++))
 		done
-	else
-		log --priority=${LOG_ERROR} "${AUTOMOUNTPLIST_AFN} or ${LOGINKEYCHAIN_AFN} are missing"
-		exit 1
+		if [ ${_Try} -gt ${MaxRetryInSeconds} ]; then
+			log --priority=${LOG_ERROR} "Could not ping ${Server} within ${MaxRetryInSeconds} (RC=${RC}, RV=${_RV})"
+			return ${ERROR}
+		fi
 	fi
-	if [ ${EC} -eq ${SUCCESS} ]; then
-		if [ ${MountedShares} -eq ${Idx} ]; then
+	return ${SUCCESS}
+}
+
+function initCommonValues {
+	# set global common values
+	CommonMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print CommonMaxRetryInSeconds" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+	declare -i CommonMaxRetryInSeconds="${CommonMaxRetryInSeconds:-${MAXRETRYINSECONDS}}"
+	CommonValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print CommonValidIPRanges" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+	CommonMountOptions="$(/usr/libexec/PlistBuddy -c "Print CommonMountOptions" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+	CommonMountOptions="${CommonMountOptions:-${MOUNTOPTIONS}}"
+	CommonAccount="$(/usr/libexec/PlistBuddy -c "Print CommonAccount" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+	CommonAccount="${CommonAccount:-${LOGINNAME}}"
+	return ${SUCCESS}
+}
+
+function readMountlistValues {
+	local -i _Index=${1}
+
+	# first clear old values
+	unset ValidIPRanges MountOptions MaxRetryInSeconds Protocol Account Server Share MountPoint
+
+	# get values
+	ValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:ValidIPRanges" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+	ValidIPRanges="${ValidIPRanges:-${CommonValidIPRanges}}"
+	MountOptions=$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:MountOptions" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)
+	MountOptions="${MountOptions:-${CommonMountOptions}}"
+	MaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:MaxRetryInSeconds" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+	declare -i MaxRetryInSeconds="${MaxRetryInSeconds:-${CommonMaxRetryInSeconds}}"
+	Protocol="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:Protocol" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+	Account="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:Account" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+	Account="${Account:-${CommonAccount}}"
+	Server="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:Server" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+	Share="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:Share" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+	MountPoint="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:MountPoint" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+	MountPoint="${MountPoint:-${Share##*/}}"
+	if [[ -n "${Protocol}" && -n "${Account}" && -n "${Server}" && -n "${Share}" ]]; then
+		return ${SUCCESS}
+	else
+		log --priority=${LOG_ERROR} "Protocol \"${Protocol}\"/Account \"${Account}\"/Server \"${Server}\"/Share \"${Share}\" empty"
+		return ${ERROR}
+	fi
+}
+
+function isInValidIPRange {
+	local _ValidIPRanges="${1}"
+	local _IPAddress _IPAddressPart
+
+	if [ -n "${_ValidIPRanges}" ]; then
+		for _IPAddress in "${IPAddresses[@]}"; do
+			_IPAddressPart="$(echo "${_IPAddress}" | cut -d'.' -f1-3)"
+			if [[ "${_ValidIPRanges}" =~ (^|,)"${_IPAddressPart}"(,|$) ]]; then
+				return ${YES}
+			fi
+		done
+		log --priority=${LOG_WARNING} "Not allowed to mount \"${Share}\" because \"${IPAddresses[@]}\" not in range of \"${_ValidIPRanges}\""
+		return ${NO}
+	fi 
+	return ${YES}
+}
+
+function isMounted {
+	local _RV=""
+
+	if _RV="$(mount | egrep "//.*${Server}/(${Share})? on ${MOUNTPOINT_APN}/${Share} \(.*(, mounted by ${LOGINNAME})?\)$" 2>&1)"; then
+		log --priority=${LOG_WARNING} "Share \"${Share}\" already mounted (RV=${_RV})"
+		return ${YES}
+	fi
+	return ${NO}
+}
+
+function createMountpoint {
+	local _Share="${1}"
+	local _RV=""
+	local -i _RC=${TRUE}
+
+	if [ -n "${_Share}" ]; then
+		if [ ! -d "${MOUNTPOINT_APN}/${_Share}" ]; then
+			_RV="$( { mkdir -p ${Verbose} "${MOUNTPOINT_APN}/${_Share}" && chown "${LOGINID}:${LOGINPRIMARYGROUPID}" "${MOUNTPOINT_APN}/${_Share}" && chmod 755 "${MOUNTPOINT_APN}/${_Share}"; } 2>&1 )"
+			_RC=${?}
+			if [ ${_RC} -ne ${SUCCESS} ]; then
+				log --priority=${LOG_ERROR} "Could not create \"${MOUNTPOINT_APN}/${_Share}\" (RC=${_RC}, RV=${_RV})"
+				rmdir "${MOUNTPOINT_APN}/${_Share}" >/dev/null 2>&1
+				return ${ERROR}
+			fi
+		fi
+	fi
+	return ${SUCCESS}
+}
+
+function processMountlist {
+	local _RV=""
+	local -i _RC=${TRUE}
+	local -i _EC=${TRUE}
+
+	# check all files exits
+	if [ ! -s "${AUTOMOUNTPLIST_AFN}" ] || [ ! -s "${LOGINKEYCHAIN_AFN}" ]; then
+		log --priority=${LOG_ERROR} "${AUTOMOUNTPLIST_AFN} or ${LOGINKEYCHAIN_AFN} are missing"
+		return ${ERROR}
+	fi		
+
+	# get local ip address(es)
+	getIPAddresses
+	_RC=${?}
+	if [ ${_RC} -ne ${SUCCESS} ]; then
+		return ${_RC}
+	fi
+
+	# initialize common values
+	initCommonValues
+
+	# process automount plist file
+	MountlistIndex=0
+	while /usr/libexec/PlistBuddy -c "Print Mountlist:${MountlistIndex}" "${AUTOMOUNTPLIST_AFN}" >/dev/null 2>&1; do
+		# get the values
+		if ! readMountlistValues ${MountlistIndex}; then
+			((MountlistIndex++))
+			continue
+		fi
+		# check if in valid ip range
+		if ! isInValidIPRange "${ValidIPRanges}"; then
+			((MountlistIndex++))
+			continue
+		fi
+
+		# is share already mounted?
+		if isMounted; then
+			((MountlistIndex++))
+			continue
+		fi			
+					
+		# create mountpoint
+		if ! createMountpoint "${MountPoint}"; then
+			((MountlistIndex++))
+			continue
+		fi			
+					
+		case ${Protocol} in
+			http|https)
+				_RV="$(expect -c '
+					set timeout 15
+					'"${ExpectDebug}"'
+					spawn /sbin/mount_webdav -s -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+					expect "name:" {
+						send "'"${Account}"'\r"
+					}
+					expect timeout {
+						exit 1
+					} "word:" {
+						send "'$(getPasswordFromKeychain)'\r"
+						exp_continue
+					} eof
+					catch wait result
+					exit [lindex $result 3]
+					' 2>&1)"
+				_RC=${?}
+				;;
+			ftp)
+				_RV="$(expect -c '
+					set timeout 15
+					'"${ExpectDebug}"'
+					spawn /sbin/mount_ftp -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+					expect "name:" {
+						send "'"${Account}"'\r"
+					}
+					expect timeout {
+						exit 1
+					} "word:" {
+						send "'$(getPasswordFromKeychain)'\r"
+						exp_continue
+					} eof
+					catch wait result
+					exit [lindex $result 3]
+					' 2>&1)"
+				_RC=${?}
+				;;
+			nfs)
+				_RV="$(mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} "${Server}:/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
+				_RC=${?}
+				;;
+			afp)
+				_RV="$(mount_afp -s ${MountOptions:+ -o ${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
+				_RC=${?}
+				;;
+			smb)
+				_RV="$(mount_smbfs -o soft${MountOptions:+,${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
+				_RC=${?}
+				;;
+			cifs)
+				_RV="$(mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
+				_RC=${?}
+				;;
+			*)
+				log --priority=${LOG_ERROR} "Unknown protocol ${Protocol}"
+				((MountlistIndex++))
+				continue
+				;;
+		esac
+		if [ ${_RC} -eq ${SUCCESS} ]; then
+			log --priority=${LOG_INFO} "${Share} mounted successfully"
+			((MountedShares++))
+		else
+			log --priority=${LOG_ERROR} "mount of ${Share} failed (RC=${_RC}, RV=${_RV})"
+		fi
+		_EC=$((_EC||_RC))
+		((MountlistIndex++))
+	done
+	if [ ${_EC} -eq ${SUCCESS} ]; then
+		if [ ${MountedShares} -eq ${MountlistIndex} ]; then
 			log --priority=${LOG_INFO} "automount runned successfully."
 		fi
 		if [ ${BACKGROUND} -eq ${YES} ]; then
@@ -473,7 +558,7 @@ function mountAll {
 		fi
 	fi
 
-	exit ${EC}
+	return ${_EC}
 }
 
 function addPassword {
@@ -512,7 +597,7 @@ function addPassword {
 }
 
 function create_lock {
-	local _RV
+	local _RV _RunningPID
 	local -i _RC=${TRUE}
 
 	_RV="$( { mkdir "${LOCK_APN}" && echo "${$}" > "${LOCK_AFN}"; } 2>&1 || false )"
@@ -620,7 +705,7 @@ while :; do
 				Action="addPassword"
 				;;
 			-m|--mountall)
-				Action="mountAll"
+				Action="processMountlist"
 				;;
 			-v|--verbose)
 				Verbose="-v"
@@ -639,8 +724,10 @@ while :; do
 done
 
 case "${Action}" in
-	mountAll)
+	processMountlist)
 		${Action}
+		RC=${?}
+		exit ${RC}
 		;;
 	addPassword)
 		if [[ -z "${Protocol}" || -z "${Server}" ]]; then
