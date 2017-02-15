@@ -585,7 +585,7 @@ function addPassword {
 		-T /System/Library/CoreServices/NetAuthAgent.app \
 		-T group://NetAuth \
 		${_AppAccess} \
-		"${_AccountHomeDirectory}"/Library/Keychains/login.keychain 2>&1)"
+		"${LOGINHOME}"/Library/Keychains/login.keychain 2>&1)"
 	_RC=${?}
 
 	if [ ${_RC} -eq ${SUCCESS} ]; then
