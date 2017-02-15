@@ -35,8 +35,8 @@ fi
 #chmod 755 /usr/local/bin/automount.sh
 
 # CONSTANTS
-declare -r SCRIPTLASTMOD="2017-02-12"
-declare -r SCRIPTVERSION="0.90.5"
+declare -r SCRIPTLASTMOD="2017-02-15"
+declare -r SCRIPTVERSION="0.90.6"
 declare -ri YES=0
 declare -ri SUCCESS=${YES}
 declare -ri TRUE=${YES}
