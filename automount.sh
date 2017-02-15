@@ -563,7 +563,6 @@ function processMountlist {
 
 function addPassword {
 	local _Account="${Account:-${LOGINNAME}}"
-	local _AccountHomeDirectory="$(dscl . read /Users/${_Account} NFSHomeDirectory | cut -d' ' -f2-)"
 	local _AppAccess=""
 	local _RV=""
 	local -i RC=0
