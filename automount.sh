@@ -133,8 +133,6 @@ LOG_LEVEL[${#LOG_LEVEL[@]}]="Debug"
 declare -r LOG_LEVEL
 # automount plist (absolute file name)
 declare -r AUTOMOUNTPLIST_AFN="${LOGINHOME}/Library/Preferences/it.niemetz.automount.plist"
-# login keychain (absolute file name)
-declare -r LOGINKEYCHAIN_AFN="${LOGINHOME}/Library/Keychains/login.keychain"
 # max pings
 declare -ir MAXRETRYINSECONDS=10
 # mount options
@@ -146,8 +144,11 @@ declare -ir PINGTIMEOUT=1
 if [[ ${OSVERSION_INTEGER} -ge 101200 && ${LOGINID} -ne 0 ]]; then
 	# mountpoint absolute pathname
 	MOUNTPOINT_APN="${LOGINHOME}/Volumes"
+	# login keychain (absolute file name)
+	declare -r LOGINKEYCHAIN_AFN="${LOGINHOME}/Library/Keychains/login.keychain-db"
 else
 	MOUNTPOINT_APN="/Volumes"
+	declare -r LOGINKEYCHAIN_AFN="${LOGINHOME}/Library/Keychains/login.keychain"
 fi
 
 # Global variables
