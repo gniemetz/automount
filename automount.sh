@@ -35,8 +35,8 @@ fi
 #chmod 755 /usr/local/bin/automount.sh
 
 # CONSTANTS
-declare -r SCRIPTLASTMOD="2017-02-17"
-declare -r SCRIPTVERSION="0.90.8"
+declare -r SCRIPTLASTMOD="2017-02-19"
+declare -r SCRIPTVERSION="0.90.9"
 declare -ri YES=0
 declare -ri SUCCESS=${YES}
 declare -ri TRUE=${YES}
@@ -70,11 +70,89 @@ declare -r SCRIPT_PN SCRIPTNAME SCRIPTEXTENSION
 # user name
 declare -r USERNAME="$(id -p | awk -F'	' '/^uid/ { print $2 }')"
 # user id
-declare -ir USERID="$(dscl . read /Users/${USERNAME} UniqueID | awk -F': ' '{ print $2 }')"
+declare -ir USERID="$(dscl . read /Users/${USERNAME} UniqueID |\
+					awk -F':' \
+					'BEGIN {
+						Value=""
+						KeywordFound=0
+					}
+					function getValuesFromPosition(StartPosition) {
+						for(FieldNr=StartPosition; FieldNr <= NF; FieldNr++) {
+							Value = (Value == "" ? "" : Value ":") $FieldNr
+						}
+					}
+					KeywordFound == 1 {
+						getValuesFromPosition(1)
+						KeywordFound=0
+					}
+					$1 == "UniqueID" {
+						if(NF > 1) {
+							getValuesFromPosition(2)
+					 	} else {
+					 		KeywordFound=1
+					 		next
+					 	}
+					}
+					END {
+						gsub(/^[[:space:]]+/, "", Value)
+						printf("%s", Value)
+					}')"
 # user primary group id
-declare -ir USERPRIMARYGROUPID="$(dscl . read /Users/${USERNAME} PrimaryGroupID | awk -F': ' '{ print $2 }')"
+declare -ir USERPRIMARYGROUPID="$(dscl . read /Users/${USERNAME} PrimaryGroupID |\
+					awk -F':' \
+					'BEGIN {
+						Value=""
+						KeywordFound=0
+					}
+					function getValuesFromPosition(StartPosition) {
+						for(FieldNr=StartPosition; FieldNr <= NF; FieldNr++) {
+							Value = (Value == "" ? "" : Value ":") $FieldNr
+						}
+					}
+					KeywordFound == 1 {
+						getValuesFromPosition(1)
+						KeywordFound=0
+					}
+					$1 == "PrimaryGroupID" {
+						if(NF > 1) {
+							getValuesFromPosition(2)
+					 	} else {
+					 		KeywordFound=1
+					 		next
+					 	}
+					}
+					END {
+						gsub(/^[[:space:]]+/, "", Value)
+						printf("%s", Value)
+					}')"
 # user home
-declare -r USERHOME="$(dscl . read /Users/${USERNAME} NFSHomeDirectory | awk -F': ' '{ print $2 }')"
+declare -r USERHOME="$(dscl . read /Users/${USERNAME} NFSHomeDirectory |\
+					awk -F':' \
+					'BEGIN {
+						Value=""
+						KeywordFound=0
+					}
+					function getValuesFromPosition(StartPosition) {
+						for(FieldNr=StartPosition; FieldNr <= NF; FieldNr++) {
+							Value = (Value == "" ? "" : Value ":") $FieldNr
+						}
+					}
+					KeywordFound == 1 {
+						getValuesFromPosition(1)
+						KeywordFound=0
+					}
+					$1 == "NFSHomeDirectory" {
+						if(NF > 1) {
+							getValuesFromPosition(2)
+					 	} else {
+					 		KeywordFound=1
+					 		next
+					 	}
+					}
+					END {
+						gsub(/^[[:space:]]+/, "", Value)
+						printf("%s", Value)
+					}')"
 # login name
 LOGINNAME="$(id -p | awk -F'	' '/^login/ { print $2 }')"
 if [ -z "${LOGINNAME}" ]; then
@@ -88,9 +166,87 @@ if [ -z "${LOGINNAME}" ]; then
 	# launch as user
 	LAUNCHASUSER=""
 else
-	declare -i LOGINID="$(dscl . read /Users/${LOGINNAME} UniqueID | awk -F': ' '{ print $2 }')"
-	declare -i LOGINPRIMARYGROUPID="$(dscl . read /Users/${LOGINNAME} PrimaryGroupID | awk -F': ' '{ print $2 }')"
-	LOGINHOME="$(dscl . read /Users/${LOGINNAME} NFSHomeDirectory | awk -F': ' '{ print $2 }')"
+	declare -i LOGINID="$(dscl . read /Users/${LOGINNAME} UniqueID |\
+					awk -F':' \
+					'BEGIN {
+						Value=""
+						KeywordFound=0
+					}
+					function getValuesFromPosition(StartPosition) {
+						for(FieldNr=StartPosition; FieldNr <= NF; FieldNr++) {
+							Value = (Value == "" ? "" : Value ":") $FieldNr
+						}
+					}
+					KeywordFound == 1 {
+						getValuesFromPosition(1)
+						KeywordFound=0
+					}
+					$1 == "UniqueID" {
+						if(NF > 1) {
+							getValuesFromPosition(2)
+					 	} else {
+					 		KeywordFound=1
+					 		next
+					 	}
+					}
+					END {
+						gsub(/^[[:space:]]+/, "", Value)
+						printf("%s", Value)
+					}')"
+	declare -i LOGINPRIMARYGROUPID="$(dscl . read /Users/${LOGINNAME} PrimaryGroupID |\
+									awk -F':' \
+									'BEGIN {
+										Value=""
+										KeywordFound=0
+									}
+									function getValuesFromPosition(StartPosition) {
+										for(FieldNr=StartPosition; FieldNr <= NF; FieldNr++) {
+											Value = (Value == "" ? "" : Value ":") $FieldNr
+										}
+									}
+									KeywordFound == 1 {
+										getValuesFromPosition(1)
+										KeywordFound=0
+									}
+									$1 == "PrimaryGroupID" {
+										if(NF > 1) {
+											getValuesFromPosition(2)
+									 	} else {
+									 		KeywordFound=1
+									 		next
+									 	}
+									}
+									END {
+										gsub(/^[[:space:]]+/, "", Value)
+										printf("%s", Value)
+									}')"
+	LOGINHOME="$(dscl . read /Users/${LOGINNAME} NFSHomeDirectory |\
+				awk -F':' \
+				'BEGIN {
+					Value=""
+					KeywordFound=0
+				}
+				function getValuesFromPosition(StartPosition) {
+					for(FieldNr=StartPosition; FieldNr <= NF; FieldNr++) {
+						Value = (Value == "" ? "" : Value ":") $FieldNr
+					}
+				}
+				KeywordFound == 1 {
+					getValuesFromPosition(1)
+					KeywordFound=0
+				}
+				$1 == "NFSHomeDirectory" {
+					if(NF > 1) {
+						getValuesFromPosition(2)
+				 	} else {
+				 		KeywordFound=1
+				 		next
+				 	}
+				}
+				END {
+					gsub(/^[[:space:]]+/, "", Value)
+					printf("%s", Value)
+				}')"
 	LAUNCHASUSER="launchctl asuser ${LOGINID} chroot -u ${LOGINID} -g ${LOGINPRIMARYGROUPID} /"
 fi
 declare -r LOGINNAME LOGINID LOGINPRIMARYGROUPID LOGINHOME LAUNCHASUSER
@@ -102,6 +258,18 @@ else
 		# background shell
 		declare -ri BACKGROUND=${YES}
 fi
+# ps -a -x -ww -p ${$} -o ppid= -o pid= -o tt= -o flags= -o state= -o logname= -o command=cmd | grep "[${LOGINNAME:0:1}]${LOGINNAME:1}.*[${SCRIPT_FN:0:1}]${SCRIPT_FN:1} ${@}">>${LOG_AFN}
+# parent pid
+# declare -i PPID=$(ps -a -x -ww -p ${$} -o ppid= -o logname= -o command= |\
+# awk -v RegexUser="[${LOGINNAME:0:1}]${LOGINNAME:1}" \
+# 	-v RegexCommand="[${SCRIPT_FN:0:1}]${SCRIPT_FN:1} ${@}" \
+# 	'BEGIN {
+# 		Regex=sprintf("%s.*%s", RegexUser, RegexCommand)
+# 	}
+# 	$0 ~ Regex {
+# 		print $1
+# 	}
+# 	')
 # log dir (absolute path name)
 declare -r LOG_APN="${LOGINHOME}/Library/Logs"
 # log file (absolute file name)
@@ -134,7 +302,8 @@ declare -r LOG_LEVEL
 # automount plist (absolute file name)
 declare -r AUTOMOUNTPLIST_AFN="${LOGINHOME}/Library/Preferences/it.niemetz.automount.plist"
 # login keychain (absolute file name)
-declare -r LOGINKEYCHAIN_AFN="${LOGINHOME}/Library/Keychains/login.keychain"
+# declare -r LOGINKEYCHAIN_AFN="${LOGINHOME}/Library/Keychains/login.keychain"
+declare -r LOGINKEYCHAIN_AFN="$(${LAUNCHASUSER} security list-keychains -d user | awk -F'"' '{ print $2 }')"
 # max pings
 declare -ir MAXRETRYINSECONDS=10
 # mount options
@@ -436,9 +605,9 @@ function processMountlist {
 	local -i _EC=${TRUE}
 
 	# check all files exits
-	# if [ ! -s "${AUTOMOUNTPLIST_AFN}" ] || [ ! -s "${LOGINKEYCHAIN_AFN}" ]; then
-	if [[ ! ( -s "${AUTOMOUNTPLIST_AFN}" && ( -s "${LOGINKEYCHAIN_AFN}" || -s "${LOGINKEYCHAIN_AFN}-db" ) ) ]]; then
-		log --priority=${LOG_ERROR} "${AUTOMOUNTPLIST_AFN} or ${LOGINKEYCHAIN_AFN} are missing"
+	if [ ! -s "${AUTOMOUNTPLIST_AFN}" ] || [ ! -s "${LOGINKEYCHAIN_AFN}" ]; then
+	# if [[ ! ( -s "${AUTOMOUNTPLIST_AFN}" && ( -s "${LOGINKEYCHAIN_AFN}" || -s "${LOGINKEYCHAIN_AFN}-db" ) ) ]]; then
+		log --priority=${LOG_ERROR} "${AUTOMOUNTPLIST_AFN} and/or ${LOGINKEYCHAIN_AFN} are missing"
 		return ${ERROR}
 	fi		
 
