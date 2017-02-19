@@ -35,8 +35,8 @@ fi
 #chmod 755 /usr/local/bin/automount.sh
 
 # CONSTANTS
-declare -r SCRIPTLASTMOD="2017-02-16"
-declare -r SCRIPTVERSION="0.90.7"
+declare -r SCRIPTLASTMOD="2017-02-17"
+declare -r SCRIPTVERSION="0.90.8"
 declare -ri YES=0
 declare -ri SUCCESS=${YES}
 declare -ri TRUE=${YES}
@@ -133,6 +133,8 @@ LOG_LEVEL[${#LOG_LEVEL[@]}]="Debug"
 declare -r LOG_LEVEL
 # automount plist (absolute file name)
 declare -r AUTOMOUNTPLIST_AFN="${LOGINHOME}/Library/Preferences/it.niemetz.automount.plist"
+# login keychain (absolute file name)
+declare -r LOGINKEYCHAIN_AFN="${LOGINHOME}/Library/Keychains/login.keychain"
 # max pings
 declare -ir MAXRETRYINSECONDS=10
 # mount options
@@ -145,10 +147,10 @@ if [[ ${OSVERSION_INTEGER} -ge 101200 && ${LOGINID} -ne 0 ]]; then
 	# mountpoint absolute pathname
 	MOUNTPOINT_APN="${LOGINHOME}/Volumes"
 	# login keychain (absolute file name)
-	declare -r LOGINKEYCHAIN_AFN="${LOGINHOME}/Library/Keychains/login.keychain-db"
+	# declare -r LOGINKEYCHAIN_AFN="${LOGINHOME}/Library/Keychains/login.keychain-db"
 else
 	MOUNTPOINT_APN="/Volumes"
-	declare -r LOGINKEYCHAIN_AFN="${LOGINHOME}/Library/Keychains/login.keychain"
+	# declare -r LOGINKEYCHAIN_AFN="${LOGINHOME}/Library/Keychains/login.keychain"
 fi
 
 # Global variables
@@ -434,7 +436,8 @@ function processMountlist {
 	local -i _EC=${TRUE}
 
 	# check all files exits
-	if [ ! -s "${AUTOMOUNTPLIST_AFN}" ] || [ ! -s "${LOGINKEYCHAIN_AFN}" ]; then
+	# if [ ! -s "${AUTOMOUNTPLIST_AFN}" ] || [ ! -s "${LOGINKEYCHAIN_AFN}" ]; then
+	if [[ ! ( -s "${AUTOMOUNTPLIST_AFN}" && ( -s "${LOGINKEYCHAIN_AFN}" || -s "${LOGINKEYCHAIN_AFN}-db" ) ) ]]; then
 		log --priority=${LOG_ERROR} "${AUTOMOUNTPLIST_AFN} or ${LOGINKEYCHAIN_AFN} are missing"
 		return ${ERROR}
 	fi		
