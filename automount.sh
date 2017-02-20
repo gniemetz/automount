@@ -36,7 +36,7 @@ fi
 
 # CONSTANTS
 declare -r SCRIPTLASTMOD="2017-02-20"
-declare -r SCRIPTVERSION="0.90.11"
+declare -r SCRIPTVERSION="0.90.12"
 declare -ri YES=0
 declare -ri SUCCESS=${YES}
 declare -ri TRUE=${YES}
@@ -446,8 +446,8 @@ function pingServer {
 
 function initCommonValues {
 	# set global common values
-	CommonMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print CommonMaxRetryInSeconds" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-	declare -i CommonMaxRetryInSeconds="${CommonMaxRetryInSeconds:-${MAXRETRYINSECONDS}}"
+	CommonMaxRetryInSeconds=$(/usr/libexec/PlistBuddy -c "Print CommonMaxRetryInSeconds" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)
+	CommonMaxRetryInSeconds=${CommonMaxRetryInSeconds:-${MAXRETRYINSECONDS}}
 	CommonValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print CommonValidIPRanges" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 	CommonMountOptions="$(/usr/libexec/PlistBuddy -c "Print CommonMountOptions" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 	CommonMountOptions="${CommonMountOptions:-${MOUNTOPTIONS}}"
@@ -629,7 +629,16 @@ function processMountlist {
 				_RC=${?}
 				;;
 			afp)
-				_RV="$(${LAUNCHASUSER} mount_afp -s ${MountOptions:+ -o ${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
+				# _RV="$(${LAUNCHASUSER} mount_afp -s ${MountOptions:+ -o ${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
+					# spawn /sbin/mount_afp -i -s '"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Account}"'@'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+					# send "'$(getPasswordFromKeychain | sed -E 's/\\/\\5b/;s/\$/\\x24/;s/\[/\\x5b/;s/\]/\\x5d/;s/"/\\x022/;s/'\''/\\x27/;s/{/\\x7b/;s/}/\\x7d/')'\r"
+				_RV="$(${LAUNCHASUSER} expect -c '
+					set timeout 15
+					'"${ExpectDebug}"'
+					spawn /sbin/mount_afp -i -s '"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Account}"'@'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+					expect "word: "
+					send "'$(getPasswordFromKeychain | xxd -p | sed -e ':a' -e 'N' -e '$!ba' -e 's/\n//g' -e 's/\(..\)/\\x\1/g')'"
+					expect eof' 2>&1)"
 				_RC=${?}
 				;;
 			smb)
