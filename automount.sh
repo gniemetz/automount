@@ -500,7 +500,6 @@ function pingServer {
 	local -i _Try=0
 	# return value
 	local _RV=""
-
 	if [ -n "${_Server}" ]; then
 		while ! _RV="$(ping -c 1 -t ${PINGTIMEOUT} -o -q "${_Server}" 2>&1)" && [ ${_Try} -le ${MaxRetryInSeconds} ]; do
 			((_Try++))
@@ -534,10 +533,10 @@ function readMountlistValues {
 	# get values
 	ValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:ValidIPRanges" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 	ValidIPRanges="${ValidIPRanges:-${CommonValidIPRanges}}"
-	MountOptions=$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:MountOptions" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)
+	MountOptions="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:MountOptions" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 	MountOptions="${MountOptions:-${CommonMountOptions}}"
-	MaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:MaxRetryInSeconds" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-	declare -i MaxRetryInSeconds="${MaxRetryInSeconds:-${CommonMaxRetryInSeconds}}"
+	MaxRetryInSeconds=$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:MaxRetryInSeconds" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)
+	MaxRetryInSeconds=${MaxRetryInSeconds:-${CommonMaxRetryInSeconds}}
 	Protocol="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:Protocol" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 	Account="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:Account" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 	Account="${Account:-${CommonAccount}}"
@@ -629,6 +628,7 @@ function processMountlist {
 			((MountlistIndex++))
 			continue
 		fi
+
 		# check if in valid ip range
 		if ! isInValidIPRange "${ValidIPRanges}"; then
 			((MountlistIndex++))
@@ -637,6 +637,12 @@ function processMountlist {
 
 		# is share already mounted?
 		if isMounted; then
+			((MountlistIndex++))
+			continue
+		fi			
+
+		# is server reachable?
+		if ! pingServer "${Server}"; then
 			((MountlistIndex++))
 			continue
 		fi			
