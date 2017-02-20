@@ -36,7 +36,7 @@ fi
 
 # CONSTANTS
 declare -r SCRIPTLASTMOD="2017-02-20"
-declare -r SCRIPTVERSION="0.90.10"
+declare -r SCRIPTVERSION="0.90.11"
 declare -ri YES=0
 declare -ri SUCCESS=${YES}
 declare -ri TRUE=${YES}
@@ -67,92 +67,101 @@ if [ "${SCRIPTNAME}" == "" ]; then
 	SCRIPTEXTENSION=""
 fi
 declare -r SCRIPT_PN SCRIPTNAME SCRIPTEXTENSION
+# function for getting values from Directory Service via dscl
+function readDS {
+	local _Account _DSKey _DSValue
+	local _FS=":"
+
+	while :; do
+		case ${1} in
+			-a|--account)
+				if [[ -n "${2}" && "${2:0:1}" != "--" && "${2:0:1}" != "-" ]]; then
+					_Account="${2}"
+					shift
+				else
+					printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+					return ${ERROR}
+				fi
+				;;
+			--account=?*)
+				_Account=${1#*=} # Delete everything up to "=" and assign the remainder.
+				;;
+			--account=) # Handle the case of an empty --account=
+				printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+				return ${ERROR}
+				;;
+			-k|--key)
+				if [[ -n "${2}" && "${2:0:1}" != "--" && "${2:0:1}" != "-" ]]; then
+					_DSKey="${2}"
+					shift
+				else
+					printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+					return ${ERROR}
+				fi
+				;;
+			--key=?*)
+				_DSKey=${1#*=} # Delete everything up to "=" and assign the remainder.
+				;;
+			--key=) # Handle the case of an empty --key=
+				printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+				return ${ERROR}
+				;;
+			--) # End of all options.
+				shift
+				break
+				;;
+			-?*)
+				printf 'WARN: Unknown option (ignored): %s\n' "${1}" >&2
+				;;
+			*) # Default case: If no more options then break out of the loop.
+				break
+		esac
+		shift
+	done
+
+	if [ -n "${_Account}" ] && [ -n "${_DSKey}" ] && _DSValue="$(dscl . read /Users/"${_Account}" "${_DSKey}" |\
+																awk -F"${_FS}" \
+																	-v DSKey="${_DSKey}" \
+																'BEGIN {
+																	Value=""
+																	KeywordFound=0
+																}
+																function getValuesFromPosition(StartPosition) {
+																	for(FieldNr=StartPosition; FieldNr <= NF; FieldNr++) {
+																		Value = (Value == "" ? "" : Value FS) $FieldNr
+																	}
+																}
+																KeywordFound == 1 {
+																	getValuesFromPosition(1)
+																	KeywordFound=0
+																}
+																$1 == DSKey {
+																	if(NF > 1) {
+																		getValuesFromPosition(2)
+																 	} else {
+																 		KeywordFound=1
+																 		next
+																 	}
+																}
+																END {
+																	# trim leading space
+																	gsub(/^[[:space:]]+/, "", Value)
+																	printf("%s", Value)
+																}')"; then
+		echo "${_DSValue}"
+		return ${SUCCESS}
+	else
+		return ${ERROR}
+	fi
+}
 # user name
 declare -r USERNAME="$(id -p | awk -F'	' '/^uid/ { print $2 }')"
 # user id
-declare -ir USERID="$(dscl . read /Users/${USERNAME} UniqueID |\
-					awk -F':' \
-					'BEGIN {
-						Value=""
-						KeywordFound=0
-					}
-					function getValuesFromPosition(StartPosition) {
-						for(FieldNr=StartPosition; FieldNr <= NF; FieldNr++) {
-							Value = (Value == "" ? "" : Value ":") $FieldNr
-						}
-					}
-					KeywordFound == 1 {
-						getValuesFromPosition(1)
-						KeywordFound=0
-					}
-					$1 == "UniqueID" {
-						if(NF > 1) {
-							getValuesFromPosition(2)
-					 	} else {
-					 		KeywordFound=1
-					 		next
-					 	}
-					}
-					END {
-						gsub(/^[[:space:]]+/, "", Value)
-						printf("%s", Value)
-					}')"
+declare -ir USERID="$(readDS --account="${USERNAME}" --key="UniqueID")"
 # user primary group id
-declare -ir USERPRIMARYGROUPID="$(dscl . read /Users/${USERNAME} PrimaryGroupID |\
-					awk -F':' \
-					'BEGIN {
-						Value=""
-						KeywordFound=0
-					}
-					function getValuesFromPosition(StartPosition) {
-						for(FieldNr=StartPosition; FieldNr <= NF; FieldNr++) {
-							Value = (Value == "" ? "" : Value ":") $FieldNr
-						}
-					}
-					KeywordFound == 1 {
-						getValuesFromPosition(1)
-						KeywordFound=0
-					}
-					$1 == "PrimaryGroupID" {
-						if(NF > 1) {
-							getValuesFromPosition(2)
-					 	} else {
-					 		KeywordFound=1
-					 		next
-					 	}
-					}
-					END {
-						gsub(/^[[:space:]]+/, "", Value)
-						printf("%s", Value)
-					}')"
+declare -ir USERPRIMARYGROUPID="$(readDS --account="${USERNAME}" --key="PrimaryGroupID")"
 # user home
-declare -r USERHOME="$(dscl . read /Users/${USERNAME} NFSHomeDirectory |\
-					awk -F':' \
-					'BEGIN {
-						Value=""
-						KeywordFound=0
-					}
-					function getValuesFromPosition(StartPosition) {
-						for(FieldNr=StartPosition; FieldNr <= NF; FieldNr++) {
-							Value = (Value == "" ? "" : Value ":") $FieldNr
-						}
-					}
-					KeywordFound == 1 {
-						getValuesFromPosition(1)
-						KeywordFound=0
-					}
-					$1 == "NFSHomeDirectory" {
-						if(NF > 1) {
-							getValuesFromPosition(2)
-					 	} else {
-					 		KeywordFound=1
-					 		next
-					 	}
-					}
-					END {
-						gsub(/^[[:space:]]+/, "", Value)
-						printf("%s", Value)
-					}')"
+declare -r USERHOME="$(readDS --account="${USERNAME}" --key="NFSHomeDirectory")"
 # login name
 LOGINNAME="$(id -p | awk -F'	' '/^login/ { print $2 }')"
 if [ -z "${LOGINNAME}" ]; then
@@ -166,87 +175,9 @@ if [ -z "${LOGINNAME}" ]; then
 	# launch as user
 	LAUNCHASUSER=""
 else
-	declare -i LOGINID="$(dscl . read /Users/${LOGINNAME} UniqueID |\
-					awk -F':' \
-					'BEGIN {
-						Value=""
-						KeywordFound=0
-					}
-					function getValuesFromPosition(StartPosition) {
-						for(FieldNr=StartPosition; FieldNr <= NF; FieldNr++) {
-							Value = (Value == "" ? "" : Value ":") $FieldNr
-						}
-					}
-					KeywordFound == 1 {
-						getValuesFromPosition(1)
-						KeywordFound=0
-					}
-					$1 == "UniqueID" {
-						if(NF > 1) {
-							getValuesFromPosition(2)
-					 	} else {
-					 		KeywordFound=1
-					 		next
-					 	}
-					}
-					END {
-						gsub(/^[[:space:]]+/, "", Value)
-						printf("%s", Value)
-					}')"
-	declare -i LOGINPRIMARYGROUPID="$(dscl . read /Users/${LOGINNAME} PrimaryGroupID |\
-									awk -F':' \
-									'BEGIN {
-										Value=""
-										KeywordFound=0
-									}
-									function getValuesFromPosition(StartPosition) {
-										for(FieldNr=StartPosition; FieldNr <= NF; FieldNr++) {
-											Value = (Value == "" ? "" : Value ":") $FieldNr
-										}
-									}
-									KeywordFound == 1 {
-										getValuesFromPosition(1)
-										KeywordFound=0
-									}
-									$1 == "PrimaryGroupID" {
-										if(NF > 1) {
-											getValuesFromPosition(2)
-									 	} else {
-									 		KeywordFound=1
-									 		next
-									 	}
-									}
-									END {
-										gsub(/^[[:space:]]+/, "", Value)
-										printf("%s", Value)
-									}')"
-	LOGINHOME="$(dscl . read /Users/${LOGINNAME} NFSHomeDirectory |\
-				awk -F':' \
-				'BEGIN {
-					Value=""
-					KeywordFound=0
-				}
-				function getValuesFromPosition(StartPosition) {
-					for(FieldNr=StartPosition; FieldNr <= NF; FieldNr++) {
-						Value = (Value == "" ? "" : Value ":") $FieldNr
-					}
-				}
-				KeywordFound == 1 {
-					getValuesFromPosition(1)
-					KeywordFound=0
-				}
-				$1 == "NFSHomeDirectory" {
-					if(NF > 1) {
-						getValuesFromPosition(2)
-				 	} else {
-				 		KeywordFound=1
-				 		next
-				 	}
-				}
-				END {
-					gsub(/^[[:space:]]+/, "", Value)
-					printf("%s", Value)
-				}')"
+	declare -i LOGINID="$(readDS --account="${LOGINNAME}" --key="UniqueID")"
+	declare -i LOGINPRIMARYGROUPID="$(readDS --account="${LOGINNAME}" --key="PrimaryGroupID")"
+	LOGINHOME="$(readDS --account="${LOGINNAME}" --key="NFSHomeDirectory")"
 	LAUNCHASUSER="launchctl asuser ${LOGINID} chroot -u ${LOGINID} -g ${LOGINPRIMARYGROUPID} /"
 fi
 declare -r LOGINNAME LOGINID LOGINPRIMARYGROUPID LOGINHOME LAUNCHASUSER
@@ -328,7 +259,7 @@ declare -i MountlistIndex
 # is ip in valid range
 declare -i IsInValidRange=${TRUE}
 # exit code
-declare -i EC=${TRUE}
+declare -i EC=${SUCCESS}
 # array of ip addresses
 declare -a IPAddresses=()
 # late bound variables
@@ -364,23 +295,23 @@ function log {
 					if [[ -n "${2}" && "${2:0:1}" != "--" && "${2:0:1}" != "-" ]]; then
 						if ! _Priority=${2} 2>/dev/null; then
 							printf 'ERROR: "%s" requires a numeric option argument.\n' "${1}" >&2
-							exit 1
+							return ${ERROR}
 						fi
 						shift
 					else
 						printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
-						exit 1
+						return ${ERROR}
 					fi
 					;;
 				--priority=?*)
 					if ! _Priority=${1#*=} 2>/dev/null; then
 						printf 'ERROR: "%s" requires a numeric option argument.\n' "${1}" >&2
-						exit 1
+						return ${ERROR}
 					fi
 					;;
 				--priority=)
 					printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
-					exit 1
+					return ${ERROR}
 					;;
 				--) # End of all options.
 					shift
@@ -402,6 +333,7 @@ function log {
 		echo "${1}"
 	fi
 	echo "$(date +"${_DateFormat}")${_Delimiter}${$}${_Delimiter}${LOG_LEVEL[${_Priority}]}${_Delimiter}${1}" >>"${LOG_AFN}"
+	return ${SUCCESS}
 }
 
 function cleanup {
@@ -655,7 +587,7 @@ function processMountlist {
 					
 		case ${Protocol} in
 			http|https)
-				_RV="$(expect -c '
+				_RV="$(${LAUNCHASUSER} expect -c '
 					set timeout 15
 					'"${ExpectDebug}"'
 					spawn /sbin/mount_webdav -s -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
@@ -674,7 +606,7 @@ function processMountlist {
 				_RC=${?}
 				;;
 			ftp)
-				_RV="$(expect -c '
+				_RV="$(${LAUNCHASUSER} expect -c '
 					set timeout 15
 					'"${ExpectDebug}"'
 					spawn /sbin/mount_ftp -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
@@ -693,19 +625,19 @@ function processMountlist {
 				_RC=${?}
 				;;
 			nfs)
-				_RV="$(mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} "${Server}:/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
+				_RV="$(${LAUNCHASUSER} mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} "${Server}:/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
 				_RC=${?}
 				;;
 			afp)
-				_RV="$(mount_afp -s ${MountOptions:+ -o ${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
+				_RV="$(${LAUNCHASUSER} mount_afp -s ${MountOptions:+ -o ${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
 				_RC=${?}
 				;;
 			smb)
-				_RV="$(mount_smbfs -o soft${MountOptions:+,${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
+				_RV="$(${LAUNCHASUSER} mount_smbfs -o soft${MountOptions:+,${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
 				_RC=${?}
 				;;
 			cifs)
-				_RV="$(mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
+				_RV="$(${LAUNCHASUSER} mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
 				_RC=${?}
 				;;
 			*)
