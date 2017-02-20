@@ -35,8 +35,8 @@ fi
 #chmod 755 /usr/local/bin/automount.sh
 
 # CONSTANTS
-declare -r SCRIPTLASTMOD="2017-02-19"
-declare -r SCRIPTVERSION="0.90.9"
+declare -r SCRIPTLASTMOD="2017-02-20"
+declare -r SCRIPTVERSION="0.90.10"
 declare -ri YES=0
 declare -ri SUCCESS=${YES}
 declare -ri TRUE=${YES}
@@ -303,7 +303,7 @@ declare -r LOG_LEVEL
 declare -r AUTOMOUNTPLIST_AFN="${LOGINHOME}/Library/Preferences/it.niemetz.automount.plist"
 # login keychain (absolute file name)
 # declare -r LOGINKEYCHAIN_AFN="${LOGINHOME}/Library/Keychains/login.keychain"
-declare -r LOGINKEYCHAIN_AFN="$(${LAUNCHASUSER} security list-keychains -d user | awk -F'"' '{ print $2 }')"
+declare -r LOGINKEYCHAIN_AFN="$(${LAUNCHASUSER} security list-keychains -d user | awk -F'"' '/login/ { print $2 }')"
 # max pings
 declare -ir MAXRETRYINSECONDS=10
 # mount options
