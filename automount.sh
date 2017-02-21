@@ -36,7 +36,7 @@ fi
 
 # CONSTANTS
 declare -r SCRIPTLASTMOD="2017-02-21"
-declare -r SCRIPTVERSION="0.90.13"
+declare -r SCRIPTVERSION="0.90.14"
 declare -ri YES=0
 declare -ri SUCCESS=${YES}
 declare -ri TRUE=${YES}
@@ -236,7 +236,7 @@ declare -r AUTOMOUNTPLIST_AFN="${LOGINHOME}/Library/Preferences/it.niemetz.autom
 # declare -r LOGINKEYCHAIN_AFN="${LOGINHOME}/Library/Keychains/login.keychain"
 declare -r LOGINKEYCHAIN_AFN="$(${LAUNCHASUSER} security list-keychains -d user | awk -F'"' '/login/ { print $2 }')"
 # max pings
-declare -ir MAXRETRYINSECONDS=10
+declare -r MAXRETRYINSECONDS=10
 # mount options
 declare -r MOUNTOPTIONS="nodev,nosuid"
 # map protocol to value in keychain
@@ -263,13 +263,13 @@ declare -i EC=${SUCCESS}
 # array of ip addresses
 declare -a IPAddresses=()
 # late bound variables
-declare -i CommonMaxRetryInSeconds
+CommonMaxRetryInSeconds=""
 CommonValidIPRanges=""
 CommonMountOptions=""
 CommonAccount=""
 ValidIPRanges=""
 MountOptions=""
-declare -i MaxRetryInSeconds
+MaxRetryInSeconds=""
 Protocol=""
 Account=""
 Server=""
@@ -814,7 +814,7 @@ function addPassword {
 		-j "${SCRIPTNAME}" \
 		-r "$(getKeychainProtocol)" \
 		-s "${Server}" \
-		-w "$(read -p "Password: " -s && echo "${REPLY}"; unset REPLY)" \
+		-w "$(read -r -p "Password: " -s && echo "${REPLY}"; unset REPLY)" \
 		-U \
 		-T /usr/bin/security \
 		-T /System/Library/CoreServices/NetAuthAgent.app/Contents/MacOS/NetAuthSysAgent \
