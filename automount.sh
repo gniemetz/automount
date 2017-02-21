@@ -35,8 +35,8 @@ fi
 #chmod 755 /usr/local/bin/automount.sh
 
 # CONSTANTS
-declare -r SCRIPTLASTMOD="2017-02-20"
-declare -r SCRIPTVERSION="0.90.12"
+declare -r SCRIPTLASTMOD="2017-02-21"
+declare -r SCRIPTVERSION="0.90.13"
 declare -ri YES=0
 declare -ri SUCCESS=${YES}
 declare -ri TRUE=${YES}
@@ -416,7 +416,12 @@ function getPasswordFromKeychain {
 		-a "${Account}" \
 		-l "${Server}" \
 		-j "${SCRIPTNAME}" \
-		"${LOGINKEYCHAIN_AFN}" 2>&1
+		"${LOGINKEYCHAIN_AFN}" |\
+		od -A n -t x1 |\
+		sed -E 's/^ */  /;s/ *$//;s/  /\\x/g' |\
+		tr -d '\n'
+		# xxd -p |\
+		# sed -e ':a' -e 'N' -e '$!ba' -e 's/\n//g' -e 's/\(..\)/\\x\1/g'
 	_RC=${?}
 
 	if [ ${_RC} -ne ${SUCCESS} ]; then
@@ -586,39 +591,89 @@ function processMountlist {
 		fi			
 					
 		case ${Protocol} in
+			# http|https)
+			# 	_RV="$(${LAUNCHASUSER} expect -c '
+			# 		set timeout 15
+			# 		'"${ExpectDebug}"'
+			# 		spawn /sbin/mount_webdav -s -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+			# 		expect "name:" {
+			# 			send "'"${Account}"'\r"
+			# 		}
+			# 		expect timeout {
+			# 			exit 1
+			# 		} "word:" {
+			# 			send "'$(getPasswordFromKeychain)'\r"
+			# 			exp_continue
+			# 		} eof
+			# 		catch wait result
+			# 		exit [lindex $result 3]
+			# 		' 2>&1)"
+			# 	_RC=${?}
+			# 	;;
 			http|https)
 				_RV="$(${LAUNCHASUSER} expect -c '
-					set timeout 15
+					set timeout '${MaxRetryInSeconds}'
 					'"${ExpectDebug}"'
 					spawn /sbin/mount_webdav -s -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
-					expect "name:" {
-						send "'"${Account}"'\r"
+					expect {
+						"name:" {
+							send -- "'"${Account}"'\r"
+						}
+						"sword:" {
+							send -- "'$(getPasswordFromKeychain)'\r"
+							exp_continue
+						}
+						timeout {
+							exit 1
+						}
+						eof {
+							return
+						}
 					}
-					expect timeout {
-						exit 1
-					} "word:" {
-						send "'$(getPasswordFromKeychain)'\r"
-						exp_continue
-					} eof
 					catch wait result
 					exit [lindex $result 3]
 					' 2>&1)"
 				_RC=${?}
 				;;
+			# ftp)
+			# 	_RV="$(${LAUNCHASUSER} expect -c '
+			# 		set timeout 15
+			# 		'"${ExpectDebug}"'
+			# 		spawn /sbin/mount_ftp -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+			# 		expect "name:" {
+			# 			send "'"${Account}"'\r"
+			# 		}
+			# 		expect timeout {
+			# 			exit 1
+			# 		} "word:" {
+			# 			send "'$(getPasswordFromKeychain)'\r"
+			# 			exp_continue
+			# 		} eof
+			# 		catch wait result
+			# 		exit [lindex $result 3]
+			# 		' 2>&1)"
+			# 	_RC=${?}
+			# 	;;
 			ftp)
 				_RV="$(${LAUNCHASUSER} expect -c '
-					set timeout 15
+					set timeout '${MaxRetryInSeconds}'
 					'"${ExpectDebug}"'
 					spawn /sbin/mount_ftp -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
-					expect "name:" {
-						send "'"${Account}"'\r"
+					expect {
+						"name:" {
+							send -- "'"${Account}"'\r"
+						}
+						"sword:" {
+							send -- "'$(getPasswordFromKeychain)'\r"
+							exp_continue
+						}
+						timeout {
+							exit 1
+						}
+						eof {
+							return
+						}
 					}
-					expect timeout {
-						exit 1
-					} "word:" {
-						send "'$(getPasswordFromKeychain)'\r"
-						exp_continue
-					} eof
 					catch wait result
 					exit [lindex $result 3]
 					' 2>&1)"
@@ -628,25 +683,87 @@ function processMountlist {
 				_RV="$(${LAUNCHASUSER} mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} "${Server}:/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
 				_RC=${?}
 				;;
+			# afp)
+			# 	# _RV="$(${LAUNCHASUSER} mount_afp -s ${MountOptions:+ -o ${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
+			# 		# spawn /sbin/mount_afp -i -s '"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Account}"'@'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+			# 		# send "'$(getPasswordFromKeychain | sed -E 's/\\/\\5b/;s/\$/\\x24/;s/\[/\\x5b/;s/\]/\\x5d/;s/"/\\x022/;s/'\''/\\x27/;s/{/\\x7b/;s/}/\\x7d/')'\r"
+			# 	_RV="$(${LAUNCHASUSER} expect -c '
+			# 		set timeout 15
+			# 		'"${ExpectDebug}"'
+			# 		spawn /sbin/mount_afp -i -s '"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Account}"'@'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+			# 		expect "sword:"
+			# 		send "'$(getPasswordFromKeychain)'"
+			# 		expect eof
+			# 		catch wait result
+			# 		exit [lindex $result 3]' 2>&1)"
+			# 	_RC=${?}
+			# 	;;
 			afp)
 				# _RV="$(${LAUNCHASUSER} mount_afp -s ${MountOptions:+ -o ${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
 					# spawn /sbin/mount_afp -i -s '"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Account}"'@'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
 					# send "'$(getPasswordFromKeychain | sed -E 's/\\/\\5b/;s/\$/\\x24/;s/\[/\\x5b/;s/\]/\\x5d/;s/"/\\x022/;s/'\''/\\x27/;s/{/\\x7b/;s/}/\\x7d/')'\r"
 				_RV="$(${LAUNCHASUSER} expect -c '
-					set timeout 15
+					set timeout '${MaxRetryInSeconds}'
 					'"${ExpectDebug}"'
-					spawn /sbin/mount_afp -i -s '"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Account}"'@'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
-					expect "word: "
-					send "'$(getPasswordFromKeychain | xxd -p | sed -e ':a' -e 'N' -e '$!ba' -e 's/\n//g' -e 's/\(..\)/\\x\1/g')'"
-					expect eof' 2>&1)"
+					spawn /sbin/mount_afp -i -s'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Account}"'@'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+					expect {
+						"sword:" {
+							send -- "'"$(getPasswordFromKeychain)"'\r"
+							exp_continue
+						}
+						timeout {
+							exit 1
+						}
+						eof {
+							return
+						}
+					}
+					catch wait result
+					exit [lindex $result 3]' 2>&1)"
 				_RC=${?}
 				;;
 			smb)
-				_RV="$(${LAUNCHASUSER} mount_smbfs -o soft${MountOptions:+,${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
+				# _RV="$(${LAUNCHASUSER} mount_smbfs -o soft${MountOptions:+,${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
+				_RV="$(${LAUNCHASUSER} expect -c '
+					set timeout '${MaxRetryInSeconds}'
+					'"${ExpectDebug}"'
+					spawn /sbin/mount_smbfs -o soft'"${MountOptions:+,${MountOptions}}"' //'"${Account}"'@'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+					expect {
+						"sword:" {
+							send -- "'"$(getPasswordFromKeychain)"'\r"
+							exp_continue
+						}
+						timeout {
+							exit 1
+						}
+						eof {
+							return
+						}
+					}
+					catch wait result
+					exit [lindex $result 3]' 2>&1)"
 				_RC=${?}
 				;;
 			cifs)
-				_RV="$(${LAUNCHASUSER} mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
+				# _RV="$(${LAUNCHASUSER} mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
+				_RV="$(${LAUNCHASUSER} expect -c '
+					set timeout '${MaxRetryInSeconds}'
+					'"${ExpectDebug}"'
+					spawn /sbin/mount -t '"${Protocol}"''"${MountOptions:+ -o ${MountOptions}}"' //'"${Account}"'@'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+					expect {
+						"sword:" {
+							send -- "'"$(getPasswordFromKeychain)"'\r"
+							exp_continue
+						}
+						timeout {
+							exit 1
+						}
+						eof {
+							return
+						}
+					}
+					catch wait result
+					exit [lindex $result 3]' 2>&1)"
 				_RC=${?}
 				;;
 			*)
