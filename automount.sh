@@ -35,8 +35,8 @@ fi
 #chmod 755 /usr/local/bin/automount.sh
 
 # CONSTANTS
-declare -r SCRIPTLASTMOD="2017-02-21"
-declare -r SCRIPTVERSION="0.90.14"
+declare -r SCRIPTLASTMOD="2017-02-22"
+declare -r SCRIPTVERSION="0.90.15"
 declare -ri YES=0
 declare -ri SUCCESS=${YES}
 declare -ri TRUE=${YES}
@@ -233,7 +233,6 @@ declare -r LOG_LEVEL
 # automount plist (absolute file name)
 declare -r AUTOMOUNTPLIST_AFN="${LOGINHOME}/Library/Preferences/it.niemetz.automount.plist"
 # login keychain (absolute file name)
-# declare -r LOGINKEYCHAIN_AFN="${LOGINHOME}/Library/Keychains/login.keychain"
 declare -r LOGINKEYCHAIN_AFN="$(${LAUNCHASUSER} security list-keychains -d user | awk -F'"' '/login/ { print $2 }')"
 # max pings
 declare -r MAXRETRYINSECONDS=10
@@ -246,11 +245,8 @@ declare -ir PINGTIMEOUT=1
 if [[ ${OSVERSION_INTEGER} -ge 101200 && ${LOGINID} -ne 0 ]]; then
 	# mountpoint absolute pathname
 	MOUNTPOINT_APN="${LOGINHOME}/Volumes"
-	# login keychain (absolute file name)
-	# declare -r LOGINKEYCHAIN_AFN="${LOGINHOME}/Library/Keychains/login.keychain-db"
 else
 	MOUNTPOINT_APN="/Volumes"
-	# declare -r LOGINKEYCHAIN_AFN="${LOGINHOME}/Library/Keychains/login.keychain"
 fi
 
 # Global variables
@@ -407,6 +403,12 @@ function getKeychainProtocol {
 	fi
 }
 
+function convertToHexCode {
+    tr -d '\n' |\
+    od -A n -t x1 |\
+    sed -E 's/^ */  /;s/ *$//;s/  /\\x/g'
+}
+
 function getPasswordFromKeychain {
 	local -i _RC=${TRUE}
 
@@ -416,10 +418,7 @@ function getPasswordFromKeychain {
 		-a "${Account}" \
 		-l "${Server}" \
 		-j "${SCRIPTNAME}" \
-		"${LOGINKEYCHAIN_AFN}" |\
-		od -A n -t x1 |\
-		sed -E 's/^ */  /;s/ *$//;s/  /\\x/g' |\
-		tr -d '\n'
+		"${LOGINKEYCHAIN_AFN}"
 		# xxd -p |\
 		# sed -e ':a' -e 'N' -e '$!ba' -e 's/\n//g' -e 's/\(..\)/\\x\1/g'
 	_RC=${?}
@@ -430,7 +429,7 @@ function getPasswordFromKeychain {
 	return ${_RC}
 }
 
-function pingServer {
+function isAlive {
 	# server to ping
 	local _Server="${1}"
 	# retry counter
@@ -562,6 +561,7 @@ function processMountlist {
 	while /usr/libexec/PlistBuddy -c "Print Mountlist:${MountlistIndex}" "${AUTOMOUNTPLIST_AFN}" >/dev/null 2>&1; do
 		# get the values
 		if ! readMountlistValues ${MountlistIndex}; then
+			_EC=$((_EC||!${?}))
 			((MountlistIndex++))
 			continue
 		fi
@@ -579,37 +579,20 @@ function processMountlist {
 		fi			
 
 		# is server reachable?
-		if ! pingServer "${Server}"; then
+		if ! isAlive "${Server}"; then
+			_EC=$((_EC||!${?}))
 			((MountlistIndex++))
 			continue
 		fi			
 					
 		# create mountpoint
 		if ! createMountpoint "${MountPoint}"; then
+			_EC=$((_EC||!${?}))
 			((MountlistIndex++))
 			continue
 		fi			
 					
 		case ${Protocol} in
-			# http|https)
-			# 	_RV="$(${LAUNCHASUSER} expect -c '
-			# 		set timeout 15
-			# 		'"${ExpectDebug}"'
-			# 		spawn /sbin/mount_webdav -s -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
-			# 		expect "name:" {
-			# 			send "'"${Account}"'\r"
-			# 		}
-			# 		expect timeout {
-			# 			exit 1
-			# 		} "word:" {
-			# 			send "'$(getPasswordFromKeychain)'\r"
-			# 			exp_continue
-			# 		} eof
-			# 		catch wait result
-			# 		exit [lindex $result 3]
-			# 		' 2>&1)"
-			# 	_RC=${?}
-			# 	;;
 			http|https)
 				_RV="$(${LAUNCHASUSER} expect -c '
 					set timeout '${MaxRetryInSeconds}'
@@ -635,25 +618,6 @@ function processMountlist {
 					' 2>&1)"
 				_RC=${?}
 				;;
-			# ftp)
-			# 	_RV="$(${LAUNCHASUSER} expect -c '
-			# 		set timeout 15
-			# 		'"${ExpectDebug}"'
-			# 		spawn /sbin/mount_ftp -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
-			# 		expect "name:" {
-			# 			send "'"${Account}"'\r"
-			# 		}
-			# 		expect timeout {
-			# 			exit 1
-			# 		} "word:" {
-			# 			send "'$(getPasswordFromKeychain)'\r"
-			# 			exp_continue
-			# 		} eof
-			# 		catch wait result
-			# 		exit [lindex $result 3]
-			# 		' 2>&1)"
-			# 	_RC=${?}
-			# 	;;
 			ftp)
 				_RV="$(${LAUNCHASUSER} expect -c '
 					set timeout '${MaxRetryInSeconds}'
@@ -683,32 +647,14 @@ function processMountlist {
 				_RV="$(${LAUNCHASUSER} mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} "${Server}:/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
 				_RC=${?}
 				;;
-			# afp)
-			# 	# _RV="$(${LAUNCHASUSER} mount_afp -s ${MountOptions:+ -o ${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
-			# 		# spawn /sbin/mount_afp -i -s '"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Account}"'@'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
-			# 		# send "'$(getPasswordFromKeychain | sed -E 's/\\/\\5b/;s/\$/\\x24/;s/\[/\\x5b/;s/\]/\\x5d/;s/"/\\x022/;s/'\''/\\x27/;s/{/\\x7b/;s/}/\\x7d/')'\r"
-			# 	_RV="$(${LAUNCHASUSER} expect -c '
-			# 		set timeout 15
-			# 		'"${ExpectDebug}"'
-			# 		spawn /sbin/mount_afp -i -s '"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Account}"'@'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
-			# 		expect "sword:"
-			# 		send "'$(getPasswordFromKeychain)'"
-			# 		expect eof
-			# 		catch wait result
-			# 		exit [lindex $result 3]' 2>&1)"
-			# 	_RC=${?}
-			# 	;;
 			afp)
-				# _RV="$(${LAUNCHASUSER} mount_afp -s ${MountOptions:+ -o ${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
-					# spawn /sbin/mount_afp -i -s '"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Account}"'@'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
-					# send "'$(getPasswordFromKeychain | sed -E 's/\\/\\5b/;s/\$/\\x24/;s/\[/\\x5b/;s/\]/\\x5d/;s/"/\\x022/;s/'\''/\\x27/;s/{/\\x7b/;s/}/\\x7d/')'\r"
 				_RV="$(${LAUNCHASUSER} expect -c '
 					set timeout '${MaxRetryInSeconds}'
 					'"${ExpectDebug}"'
 					spawn /sbin/mount_afp -i -s'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Account}"'@'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
 					expect {
 						"sword:" {
-							send -- "'"$(getPasswordFromKeychain)"'\r"
+							send -- "'"$(getPasswordFromKeychain | convertToHexCode)"'\r"
 							exp_continue
 						}
 						timeout {
@@ -723,7 +669,6 @@ function processMountlist {
 				_RC=${?}
 				;;
 			smb)
-				# _RV="$(${LAUNCHASUSER} mount_smbfs -o soft${MountOptions:+,${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
 				_RV="$(${LAUNCHASUSER} expect -c '
 					set timeout '${MaxRetryInSeconds}'
 					'"${ExpectDebug}"'
@@ -745,7 +690,6 @@ function processMountlist {
 				_RC=${?}
 				;;
 			cifs)
-				# _RV="$(${LAUNCHASUSER} mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
 				_RV="$(${LAUNCHASUSER} expect -c '
 					set timeout '${MaxRetryInSeconds}'
 					'"${ExpectDebug}"'
