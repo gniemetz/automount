@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
-DEBUG="false"
+
+# CONSTANTS
+declare -r SCRIPTLASTMOD="2017-02-25"
+declare -r SCRIPTVERSION="0.90.16"
+declare -r DEBUG="true"
 if [ "${DEBUG}" == "false" ]; then
 	set +xv
-	ExpectDebug="log_user 0"
+	EXPECTDEBUG="log_user 0"
 else
 	PS4='+(${BASH_SOURCE:-}:${LINENO:-}): ${FUNCNAME[0]:+${FUNCNAME[0]:-}(): }'
 	set -xv
-	ExpectDebug="log_user 1"
+	EXPECTDEBUG="log_user 1"
 fi
-
+declare -r EXPECTDEBUG
 #security add-internet-password \
 #	-a ACCOUNT \
 #	-l LABEL (same as SERVER) \
@@ -34,9 +38,6 @@ fi
 #chown root:admin /usr/local/bin/automount.sh
 #chmod 755 /usr/local/bin/automount.sh
 
-# CONSTANTS
-declare -r SCRIPTLASTMOD="2017-02-22"
-declare -r SCRIPTVERSION="0.90.15"
 declare -ri YES=0
 declare -ri SUCCESS=${YES}
 declare -ri TRUE=${YES}
@@ -267,6 +268,7 @@ ValidIPRanges=""
 MountOptions=""
 MaxRetryInSeconds=""
 Protocol=""
+Domain=""
 Account=""
 Server=""
 Share=""
@@ -275,7 +277,7 @@ declare -i MountedShares=0
 # Action to do
 Action=""
 # verbose
-Verbose=""
+declare -i Verbose=0
 # redirect stdout
 RedirectStdout="/dev/null"
 
@@ -429,7 +431,7 @@ function getPasswordFromKeychain {
 	return ${_RC}
 }
 
-function isAlive {
+function isPingable {
 	# server to ping
 	local _Server="${1}"
 	# retry counter
@@ -474,6 +476,7 @@ function readMountlistValues {
 	MaxRetryInSeconds=$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:MaxRetryInSeconds" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)
 	MaxRetryInSeconds=${MaxRetryInSeconds:-${CommonMaxRetryInSeconds}}
 	Protocol="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:Protocol" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+	Domain="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:Domain" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 	Account="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:Account" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 	Account="${Account:-${CommonAccount}}"
 	Server="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:Server" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
@@ -509,7 +512,9 @@ function isMounted {
 	local _RV=""
 
 	if _RV="$(mount | egrep "//.*${Server}/(${Share})? on ${MOUNTPOINT_APN}/${Share} \(.*(, mounted by ${LOGINNAME})?\)$" 2>&1)"; then
-		log --priority=${LOG_WARNING} "Share \"${Share}\" already mounted (RV=${_RV})"
+		if [ ${Verbose} -ne 0 ]; then
+			log --priority=${LOG_WARNING} "Share \"${Share}\" already mounted (RV=${_RV})"
+		fi
 		return ${YES}
 	fi
 	return ${NO}
@@ -579,7 +584,7 @@ function processMountlist {
 		fi			
 
 		# is server reachable?
-		if ! isAlive "${Server}"; then
+		if ! isPingable "${Server}"; then
 			_EC=$((_EC||!${?}))
 			((MountlistIndex++))
 			continue
@@ -596,7 +601,7 @@ function processMountlist {
 			http|https)
 				_RV="$(${LAUNCHASUSER} expect -c '
 					set timeout '${MaxRetryInSeconds}'
-					'"${ExpectDebug}"'
+					'"${EXPECTDEBUG}"'
 					spawn /sbin/mount_webdav -s -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
 					expect {
 						"name:" {
@@ -621,7 +626,7 @@ function processMountlist {
 			ftp)
 				_RV="$(${LAUNCHASUSER} expect -c '
 					set timeout '${MaxRetryInSeconds}'
-					'"${ExpectDebug}"'
+					'"${EXPECTDEBUG}"'
 					spawn /sbin/mount_ftp -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
 					expect {
 						"name:" {
@@ -650,9 +655,17 @@ function processMountlist {
 			afp)
 				_RV="$(${LAUNCHASUSER} expect -c '
 					set timeout '${MaxRetryInSeconds}'
-					'"${ExpectDebug}"'
-					spawn /sbin/mount_afp -i -s'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Account}"'@'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+					'"${EXPECTDEBUG}"'
+					spawn /sbin/mount_afp -i -s'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
 					expect {
+						"ser:" {
+							if {"'"${Domain}"'" == ""} {
+								send -- "'"${Account}"'\r"
+							} else {
+								send -- "'"${Domain}"';'"${Account}"'\r"
+							}
+							exp_continue
+						}
 						"sword:" {
 							send -- "'"$(getPasswordFromKeychain | convertToHexCode)"'\r"
 							exp_continue
@@ -671,9 +684,17 @@ function processMountlist {
 			smb)
 				_RV="$(${LAUNCHASUSER} expect -c '
 					set timeout '${MaxRetryInSeconds}'
-					'"${ExpectDebug}"'
-					spawn /sbin/mount_smbfs -o soft'"${MountOptions:+,${MountOptions}}"' //'"${Account}"'@'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+					'"${EXPECTDEBUG}"'
+					spawn /sbin/mount_smbfs -o soft'"${MountOptions:+,${MountOptions}}"' //'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
 					expect {
+						"ser:" {
+							if {"'"${Domain}"'" == ""} {
+								send -- "'"${Account}"'\r"
+							} else {
+								send -- "'"${Domain}"';'"${Account}"'\r"
+							}
+							exp_continue
+						}
 						"sword:" {
 							send -- "'"$(getPasswordFromKeychain)"'\r"
 							exp_continue
@@ -692,7 +713,7 @@ function processMountlist {
 			cifs)
 				_RV="$(${LAUNCHASUSER} expect -c '
 					set timeout '${MaxRetryInSeconds}'
-					'"${ExpectDebug}"'
+					'"${EXPECTDEBUG}"'
 					spawn /sbin/mount -t '"${Protocol}"''"${MountOptions:+ -o ${MountOptions}}"' //'"${Account}"'@'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
 					expect {
 						"sword:" {
@@ -727,10 +748,12 @@ function processMountlist {
 	done
 	if [ ${_EC} -eq ${SUCCESS} ]; then
 		if [ ${MountedShares} -eq ${MountlistIndex} ]; then
-			log --priority=${LOG_INFO} "automount runned successfully."
-		fi
-		if [ ${BACKGROUND} -eq ${YES} ]; then
-			${LAUNCHASUSER} /usr/bin/osascript -e "display notification \"automount runned successfully.\" with title \"automount\" subtitle \"\""
+			log --priority=${LOG_INFO} "All shares mountd successfully."
+			if [ ${BACKGROUND} -eq ${YES} ]; then
+				${LAUNCHASUSER} /usr/bin/osascript -e "display notification \"All shares mounted successfully.\" with title \"automount\" subtitle \"\""
+			fi
+		else
+			log --priority=${LOG_INFO} "Some shares mountd successfully."
 		fi
 	else
 		log --priority=${LOG_ERROR} "automount runned with errors."
@@ -888,7 +911,7 @@ while :; do
 				Action="processMountlist"
 				;;
 			-v|--verbose)
-				Verbose="-v"
+				((Verbose++))
 				;;
 			--) # End of all options.
 				shift
