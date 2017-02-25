@@ -3,7 +3,7 @@
 # CONSTANTS
 declare -r SCRIPTLASTMOD="2017-02-25"
 declare -r SCRIPTVERSION="0.90.16"
-declare -r DEBUG="true"
+declare -r DEBUG="false"
 if [ "${DEBUG}" == "false" ]; then
 	set +xv
 	EXPECTDEBUG="log_user 0"
