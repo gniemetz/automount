@@ -21,6 +21,8 @@
 			<string>MOUNTOPTIONS (optional)</string>
 			<key>Protocol</key>
 			<string>PROTOCOL (mandatory, possible values are afp/smb/ftp/nfs/http/https)</string>
+			<key>Domain</key>
+			<string>DOMAIN (optional)</string>
 			<key>Account</key>
 			<string>ACCOUNT (optional)</string>
 			<key>Server</key>

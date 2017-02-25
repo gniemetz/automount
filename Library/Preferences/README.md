@@ -35,6 +35,8 @@ If not set `COMMONMOUNTOPTIONS` is used
 
 * `PROTOCOL` (string, mandatory) ... Possible values are `afp`, `smb`, `ftp` (readonly), `nfs`, `http` or `https`
 
+* `DOMAIN` (string, optional) ... Domain name for smbfs
+
 * `ACCOUNT` (string, mandatory) ... see `ACCOUNT`
 
 If not set `COMMONACCOUNT` is used
