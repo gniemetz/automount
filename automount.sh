@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-
 # CONSTANTS
 declare -r SCRIPTLASTMOD="2017-02-26"
 declare -r SCRIPTVERSION="0.90.17"
@@ -281,6 +280,17 @@ declare -i Verbose=0
 # redirect stdout
 RedirectStdout="/dev/null"
 
+#ps -a -x -ww -p ${$} -o ppid= -o pid= -o tt= -o flags= -o state= -o logname= -o command=cmd | grep "[${LOGINNAME:0:1}]${LOGINNAME:1}.*[${SCRIPT_FN:0:1}]${SCRIPT_FN:1} ${@}">>${LOG_AFN}
+declare -i PPID=$(ps -a -x -ww -p ${$} -o ppid= -o logname= -o command= |\
+awk -v RegexUser="[${LOGINNAME:0:1}]${LOGINNAME:1}" \
+	-v RegexCommand="[${SCRIPT_FN:0:1}]${SCRIPT_FN:1} ${@}" \
+	'BEGIN {
+		Regex=sprintf("%s.*%s", RegexUser, RegexCommand)
+	}
+	$0 ~ Regex {
+		print $0
+	}
+	')
 # Function definitions
 function log {
 	local _DateFormat='%Y-%m-%d %T %z'
