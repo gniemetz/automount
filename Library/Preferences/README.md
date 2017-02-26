@@ -2,7 +2,7 @@
 
 All key beginning with `COMMON` are standard values and can be overridden in the `Mountlist` array with the corresponding key
 
-* `COMMONMAXRETRYINSECONDS` (numeric, optional) ... How long in seconds to try to reach the server (ping)
+* `COMMONMAXRETRYINSECONDS` (integer, optional) ... How long in seconds to try to reach the server (ping)
 
 If not set `MAXRETRYINSECONDS` defined in automount.sh is used (Standard: 10 seconds)
 
@@ -21,7 +21,7 @@ If not set MOUNTOPTIONS defined in automount.sh is used (Standard: nodev,nosuid)
 
 In the `Mountlist` array you define the share(s) to process
 
-* `MAXRETRYINSECONDS` (numeric, optional) ... see `COMMONMAXRETRYINSECONDS`
+* `MAXRETRYINSECONDS` (integer, optional) ... see `COMMONMAXRETRYINSECONDS`
 
 If not set `COMMONMAXRETRYINSECONDS` is used
 
@@ -34,6 +34,8 @@ If not set `COMMONVALIDIPRANGES` is used
 If not set `COMMONMOUNTOPTIONS` is used
 
 * `PROTOCOL` (string, mandatory) ... Possible values are `afp`, `smb`, `ftp` (readonly), `nfs`, `http` or `https`
+
+* `DOMAIN` (string, optional) ... Domain name for smbfs
 
 * `ACCOUNT` (string, mandatory) ... see `ACCOUNT`
 

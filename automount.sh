@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
-DEBUG="true"
+# CONSTANTS
+declare -r SCRIPTLASTMOD="2017-02-26"
+declare -r SCRIPTVERSION="0.90.17"
+declare -r DEBUG="false"
 if [ "${DEBUG}" == "false" ]; then
 	set +xv
-	ExpectDebug="log_user 0"
+	EXPECTDEBUG="log_user 0"
 else
 	PS4='+(${BASH_SOURCE:-}:${LINENO:-}): ${FUNCNAME[0]:+${FUNCNAME[0]:-}(): }'
 	set -xv
-	ExpectDebug="log_user 1"
+	EXPECTDEBUG="log_user 1"
 fi
-
+declare -r EXPECTDEBUG
 #security add-internet-password \
 #	-a ACCOUNT \
 #	-l LABEL (same as SERVER) \
@@ -34,9 +37,6 @@ fi
 #chown root:admin /usr/local/bin/automount.sh
 #chmod 755 /usr/local/bin/automount.sh
 
-# CONSTANTS
-declare -r SCRIPTLASTMOD="2017-02-12"
-declare -r SCRIPTVERSION="0.90.5"
 declare -ri YES=0
 declare -ri SUCCESS=${YES}
 declare -ri TRUE=${YES}
@@ -67,14 +67,101 @@ if [ "${SCRIPTNAME}" == "" ]; then
 	SCRIPTEXTENSION=""
 fi
 declare -r SCRIPT_PN SCRIPTNAME SCRIPTEXTENSION
+# function for getting values from Directory Service via dscl
+function readDS {
+	local _Account _DSKey _DSValue
+	local _FS=":"
+
+	while :; do
+		case ${1} in
+			-a|--account)
+				if [[ -n "${2}" && "${2:0:1}" != "--" && "${2:0:1}" != "-" ]]; then
+					_Account="${2}"
+					shift
+				else
+					printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+					return ${ERROR}
+				fi
+				;;
+			--account=?*)
+				_Account=${1#*=} # Delete everything up to "=" and assign the remainder.
+				;;
+			--account=) # Handle the case of an empty --account=
+				printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+				return ${ERROR}
+				;;
+			-k|--key)
+				if [[ -n "${2}" && "${2:0:1}" != "--" && "${2:0:1}" != "-" ]]; then
+					_DSKey="${2}"
+					shift
+				else
+					printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+					return ${ERROR}
+				fi
+				;;
+			--key=?*)
+				_DSKey=${1#*=} # Delete everything up to "=" and assign the remainder.
+				;;
+			--key=) # Handle the case of an empty --key=
+				printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+				return ${ERROR}
+				;;
+			--) # End of all options.
+				shift
+				break
+				;;
+			-?*)
+				printf 'WARN: Unknown option (ignored): %s\n' "${1}" >&2
+				;;
+			*) # Default case: If no more options then break out of the loop.
+				break
+		esac
+		shift
+	done
+
+	if [ -n "${_Account}" ] && [ -n "${_DSKey}" ] && _DSValue="$(dscl . read /Users/"${_Account}" "${_DSKey}" |\
+																awk -F"${_FS}" \
+																	-v DSKey="${_DSKey}" \
+																'BEGIN {
+																	Value=""
+																	KeywordFound=0
+																}
+																function getValuesFromPosition(StartPosition) {
+																	for(FieldNr=StartPosition; FieldNr <= NF; FieldNr++) {
+																		Value = (Value == "" ? "" : Value FS) $FieldNr
+																	}
+																}
+																KeywordFound == 1 {
+																	getValuesFromPosition(1)
+																	KeywordFound=0
+																}
+																$1 == DSKey {
+																	if(NF > 1) {
+																		getValuesFromPosition(2)
+																 	} else {
+																 		KeywordFound=1
+																 		next
+																 	}
+																}
+																END {
+																	# trim leading space
+																	gsub(/^[[:space:]]+/, "", Value)
+																	printf("%s", Value)
+																}')"; then
+		echo "${_DSValue}"
+		return ${SUCCESS}
+	else
+		return ${ERROR}
+	fi
+}
 # user name
 declare -r USERNAME="$(id -p | awk -F'	' '/^uid/ { print $2 }')"
 # user id
-declare -ir USERID="$(dscl . read /Users/${USERNAME} UniqueID | awk -F': ' '{ print $2 }')"
+declare -ir USERID="$(readDS --account="${USERNAME}" --key="UniqueID")"
 # user primary group id
-declare -ir USERPRIMARYGROUPID="$(dscl . read /Users/${USERNAME} PrimaryGroupID | awk -F': ' '{ print $2 }')"
+declare -ir USERPRIMARYGROUPID="$(readDS --account="${USERNAME}" --key="PrimaryGroupID")"
 # user home
-declare -r USERHOME="$(dscl . read /Users/${USERNAME} NFSHomeDirectory | awk -F': ' '{ print $2 }')"
+declare -r USERHOME="$(readDS --account="${USERNAME}" --key="NFSHomeDirectory")"
 # login name
 LOGINNAME="$(id -p | awk -F'	' '/^login/ { print $2 }')"
 if [ -z "${LOGINNAME}" ]; then
@@ -88,9 +175,9 @@ if [ -z "${LOGINNAME}" ]; then
 	# launch as user
 	LAUNCHASUSER=""
 else
-	declare -i LOGINID="$(dscl . read /Users/${LOGINNAME} UniqueID | awk -F': ' '{ print $2 }')"
-	declare -i LOGINPRIMARYGROUPID="$(dscl . read /Users/${LOGINNAME} PrimaryGroupID | awk -F': ' '{ print $2 }')"
-	LOGINHOME="$(dscl . read /Users/${LOGINNAME} NFSHomeDirectory | awk -F': ' '{ print $2 }')"
+	declare -i LOGINID="$(readDS --account="${LOGINNAME}" --key="UniqueID")"
+	declare -i LOGINPRIMARYGROUPID="$(readDS --account="${LOGINNAME}" --key="PrimaryGroupID")"
+	LOGINHOME="$(readDS --account="${LOGINNAME}" --key="NFSHomeDirectory")"
 	LAUNCHASUSER="launchctl asuser ${LOGINID} chroot -u ${LOGINID} -g ${LOGINPRIMARYGROUPID} /"
 fi
 declare -r LOGINNAME LOGINID LOGINPRIMARYGROUPID LOGINHOME LAUNCHASUSER
@@ -102,6 +189,18 @@ else
 		# background shell
 		declare -ri BACKGROUND=${YES}
 fi
+# ps -a -x -ww -p ${$} -o ppid= -o pid= -o tt= -o flags= -o state= -o logname= -o command=cmd | grep "[${LOGINNAME:0:1}]${LOGINNAME:1}.*[${SCRIPT_FN:0:1}]${SCRIPT_FN:1} ${@}">>${LOG_AFN}
+# parent pid
+# declare -i PPID=$(ps -a -x -ww -p ${$} -o ppid= -o logname= -o command= |\
+# awk -v RegexUser="[${LOGINNAME:0:1}]${LOGINNAME:1}" \
+# 	-v RegexCommand="[${SCRIPT_FN:0:1}]${SCRIPT_FN:1} ${@}" \
+# 	'BEGIN {
+# 		Regex=sprintf("%s.*%s", RegexUser, RegexCommand)
+# 	}
+# 	$0 ~ Regex {
+# 		print $1
+# 	}
+# 	')
 # log dir (absolute path name)
 declare -r LOG_APN="${LOGINHOME}/Library/Logs"
 # log file (absolute file name)
@@ -134,9 +233,9 @@ declare -r LOG_LEVEL
 # automount plist (absolute file name)
 declare -r AUTOMOUNTPLIST_AFN="${LOGINHOME}/Library/Preferences/it.niemetz.automount.plist"
 # login keychain (absolute file name)
-declare -r LOGINKEYCHAIN_AFN="${LOGINHOME}/Library/Keychains/login.keychain"
+declare -r LOGINKEYCHAIN_AFN="$(${LAUNCHASUSER} security list-keychains -d user | awk -F'"' '/login/ { print $2 }')"
 # max pings
-declare -ir MAXRETRYINSECONDS=10
+declare -r MAXRETRYINSECONDS=10
 # mount options
 declare -r MOUNTOPTIONS="nodev,nosuid"
 # map protocol to value in keychain
@@ -156,18 +255,19 @@ declare -i MountlistIndex
 # is ip in valid range
 declare -i IsInValidRange=${TRUE}
 # exit code
-declare -i EC=${TRUE}
+declare -i EC=${SUCCESS}
 # array of ip addresses
 declare -a IPAddresses=()
 # late bound variables
-declare -i CommonMaxRetryInSeconds
+CommonMaxRetryInSeconds=""
 CommonValidIPRanges=""
 CommonMountOptions=""
 CommonAccount=""
 ValidIPRanges=""
 MountOptions=""
-declare -i MaxRetryInSeconds
+MaxRetryInSeconds=""
 Protocol=""
+Domain=""
 Account=""
 Server=""
 Share=""
@@ -176,7 +276,7 @@ declare -i MountedShares=0
 # Action to do
 Action=""
 # verbose
-Verbose=""
+declare -i Verbose=0
 # redirect stdout
 RedirectStdout="/dev/null"
 
@@ -203,23 +303,23 @@ function log {
 					if [[ -n "${2}" && "${2:0:1}" != "--" && "${2:0:1}" != "-" ]]; then
 						if ! _Priority=${2} 2>/dev/null; then
 							printf 'ERROR: "%s" requires a numeric option argument.\n' "${1}" >&2
-							exit 1
+							return ${ERROR}
 						fi
 						shift
 					else
 						printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
-						exit 1
+						return ${ERROR}
 					fi
 					;;
 				--priority=?*)
 					if ! _Priority=${1#*=} 2>/dev/null; then
 						printf 'ERROR: "%s" requires a numeric option argument.\n' "${1}" >&2
-						exit 1
+						return ${ERROR}
 					fi
 					;;
 				--priority=)
 					printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
-					exit 1
+					return ${ERROR}
 					;;
 				--) # End of all options.
 					shift
@@ -241,6 +341,7 @@ function log {
 		echo "${1}"
 	fi
 	echo "$(date +"${_DateFormat}")${_Delimiter}${$}${_Delimiter}${LOG_LEVEL[${_Priority}]}${_Delimiter}${1}" >>"${LOG_AFN}"
+	return ${SUCCESS}
 }
 
 function cleanup {
@@ -314,6 +415,12 @@ function getKeychainProtocol {
 	fi
 }
 
+function convertToHexCode {
+    tr -d '\n' |\
+    od -A n -t x1 |\
+    sed -E 's/^ */  /;s/ *$//;s/  /\\x/g'
+}
+
 function getPasswordFromKeychain {
 	local -i _RC=${TRUE}
 
@@ -323,7 +430,9 @@ function getPasswordFromKeychain {
 		-a "${Account}" \
 		-l "${Server}" \
 		-j "${SCRIPTNAME}" \
-		"${LOGINKEYCHAIN_AFN}" 2>&1
+		"${LOGINKEYCHAIN_AFN}"
+		# xxd -p |\
+		# sed -e ':a' -e 'N' -e '$!ba' -e 's/\n//g' -e 's/\(..\)/\\x\1/g'
 	_RC=${?}
 
 	if [ ${_RC} -ne ${SUCCESS} ]; then
@@ -332,14 +441,13 @@ function getPasswordFromKeychain {
 	return ${_RC}
 }
 
-function pingServer {
+function isPingable {
 	# server to ping
 	local _Server="${1}"
 	# retry counter
 	local -i _Try=0
 	# return value
 	local _RV=""
-
 	if [ -n "${_Server}" ]; then
 		while ! _RV="$(ping -c 1 -t ${PINGTIMEOUT} -o -q "${_Server}" 2>&1)" && [ ${_Try} -le ${MaxRetryInSeconds} ]; do
 			((_Try++))
@@ -354,8 +462,8 @@ function pingServer {
 
 function initCommonValues {
 	# set global common values
-	CommonMaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print CommonMaxRetryInSeconds" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-	declare -i CommonMaxRetryInSeconds="${CommonMaxRetryInSeconds:-${MAXRETRYINSECONDS}}"
+	CommonMaxRetryInSeconds=$(/usr/libexec/PlistBuddy -c "Print CommonMaxRetryInSeconds" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)
+	CommonMaxRetryInSeconds=${CommonMaxRetryInSeconds:-${MAXRETRYINSECONDS}}
 	CommonValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print CommonValidIPRanges" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 	CommonMountOptions="$(/usr/libexec/PlistBuddy -c "Print CommonMountOptions" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 	CommonMountOptions="${CommonMountOptions:-${MOUNTOPTIONS}}"
@@ -373,11 +481,12 @@ function readMountlistValues {
 	# get values
 	ValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:ValidIPRanges" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 	ValidIPRanges="${ValidIPRanges:-${CommonValidIPRanges}}"
-	MountOptions=$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:MountOptions" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)
+	MountOptions="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:MountOptions" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 	MountOptions="${MountOptions:-${CommonMountOptions}}"
-	MaxRetryInSeconds="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:MaxRetryInSeconds" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-	declare -i MaxRetryInSeconds="${MaxRetryInSeconds:-${CommonMaxRetryInSeconds}}"
+	MaxRetryInSeconds=$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:MaxRetryInSeconds" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)
+	MaxRetryInSeconds=${MaxRetryInSeconds:-${CommonMaxRetryInSeconds}}
 	Protocol="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:Protocol" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+	Domain="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:Domain" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 	Account="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:Account" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 	Account="${Account:-${CommonAccount}}"
 	Server="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:Server" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
@@ -413,7 +522,9 @@ function isMounted {
 	local _RV=""
 
 	if _RV="$(mount | egrep "//.*${Server}/(${Share})? on ${MOUNTPOINT_APN}/${Share} \(.*(, mounted by ${LOGINNAME})?\)$" 2>&1)"; then
-		log --priority=${LOG_WARNING} "Share \"${Share}\" already mounted (RV=${_RV})"
+		if [ ${Verbose} -ne 0 ]; then
+			log --priority=${LOG_WARNING} "Share \"${Share}\" already mounted (RV=${_RV})"
+		fi
 		return ${YES}
 	fi
 	return ${NO}
@@ -445,7 +556,8 @@ function processMountlist {
 
 	# check all files exits
 	if [ ! -s "${AUTOMOUNTPLIST_AFN}" ] || [ ! -s "${LOGINKEYCHAIN_AFN}" ]; then
-		log --priority=${LOG_ERROR} "${AUTOMOUNTPLIST_AFN} or ${LOGINKEYCHAIN_AFN} are missing"
+	# if [[ ! ( -s "${AUTOMOUNTPLIST_AFN}" && ( -s "${LOGINKEYCHAIN_AFN}" || -s "${LOGINKEYCHAIN_AFN}-db" ) ) ]]; then
+		log --priority=${LOG_ERROR} "${AUTOMOUNTPLIST_AFN} and/or ${LOGINKEYCHAIN_AFN} are missing"
 		return ${ERROR}
 	fi		
 
@@ -464,9 +576,11 @@ function processMountlist {
 	while /usr/libexec/PlistBuddy -c "Print Mountlist:${MountlistIndex}" "${AUTOMOUNTPLIST_AFN}" >/dev/null 2>&1; do
 		# get the values
 		if ! readMountlistValues ${MountlistIndex}; then
+			_EC=$((_EC||!${?}))
 			((MountlistIndex++))
 			continue
 		fi
+
 		# check if in valid ip range
 		if ! isInValidIPRange "${ValidIPRanges}"; then
 			((MountlistIndex++))
@@ -478,66 +592,154 @@ function processMountlist {
 			((MountlistIndex++))
 			continue
 		fi			
+
+		# is server reachable?
+		if ! isPingable "${Server}"; then
+			_EC=$((_EC||!${?}))
+			((MountlistIndex++))
+			continue
+		fi			
 					
 		# create mountpoint
 		if ! createMountpoint "${MountPoint}"; then
+			_EC=$((_EC||!${?}))
 			((MountlistIndex++))
 			continue
 		fi			
 					
 		case ${Protocol} in
 			http|https)
-				_RV="$(expect -c '
-					set timeout 15
-					'"${ExpectDebug}"'
+				_RV="$(${LAUNCHASUSER} expect -c '
+					set timeout '${MaxRetryInSeconds}'
+					'"${EXPECTDEBUG}"'
 					spawn /sbin/mount_webdav -s -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
-					expect "name:" {
-						send "'"${Account}"'\r"
+					expect {
+						"name:" {
+							send -- "'"${Account}"'\r"
+							exp_continue
+						}
+						"sword:" {
+							send -- "'$(getPasswordFromKeychain)'\r"
+							exp_continue
+						}
+						timeout {
+							exit 1
+						}
+						eof {
+							return
+						}
 					}
-					expect timeout {
-						exit 1
-					} "word:" {
-						send "'$(getPasswordFromKeychain)'\r"
-						exp_continue
-					} eof
 					catch wait result
 					exit [lindex $result 3]
 					' 2>&1)"
 				_RC=${?}
 				;;
 			ftp)
-				_RV="$(expect -c '
-					set timeout 15
-					'"${ExpectDebug}"'
+				_RV="$(${LAUNCHASUSER} expect -c '
+					set timeout '${MaxRetryInSeconds}'
+					'"${EXPECTDEBUG}"'
 					spawn /sbin/mount_ftp -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
-					expect "name:" {
-						send "'"${Account}"'\r"
+					expect {
+						"name:" {
+							send -- "'"${Account}"'\r"
+						}
+						"sword:" {
+							send -- "'$(getPasswordFromKeychain)'\r"
+							exp_continue
+						}
+						timeout {
+							exit 1
+						}
+						eof {
+							return
+						}
 					}
-					expect timeout {
-						exit 1
-					} "word:" {
-						send "'$(getPasswordFromKeychain)'\r"
-						exp_continue
-					} eof
 					catch wait result
 					exit [lindex $result 3]
 					' 2>&1)"
 				_RC=${?}
 				;;
 			nfs)
-				_RV="$(mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} "${Server}:/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
+				_RV="$(${LAUNCHASUSER} mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} "${Server}:/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
 				_RC=${?}
 				;;
 			afp)
-				_RV="$(mount_afp -s ${MountOptions:+ -o ${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
+				_RV="$(${LAUNCHASUSER} expect -c '
+					set timeout '${MaxRetryInSeconds}'
+					'"${EXPECTDEBUG}"'
+					spawn /sbin/mount_afp -i -s'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+					expect {
+						"ser:" {
+							if {"'"${Domain}"'" == ""} {
+								send -- "'"${Account}"'\r"
+							} else {
+								send -- "'"${Domain}"';'"${Account}"'\r"
+							}
+							exp_continue
+						}
+						"sword:" {
+							send -- "'"$(getPasswordFromKeychain | convertToHexCode)"'\r"
+							exp_continue
+						}
+						timeout {
+							exit 1
+						}
+						eof {
+							return
+						}
+					}
+					catch wait result
+					exit [lindex $result 3]' 2>&1)"
 				_RC=${?}
 				;;
 			smb)
-				_RV="$(mount_smbfs -o soft${MountOptions:+,${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
+				_RV="$(${LAUNCHASUSER} expect -c '
+					set timeout '${MaxRetryInSeconds}'
+					'"${EXPECTDEBUG}"'
+					spawn /sbin/mount_smbfs -o soft'"${MountOptions:+,${MountOptions}}"' //'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+					expect {
+						"ser:" {
+							if {"'"${Domain}"'" == ""} {
+								send -- "'"${Account}"'\r"
+							} else {
+								send -- "'"${Domain}"';'"${Account}"'\r"
+							}
+							exp_continue
+						}
+						"sword:" {
+							send -- "'"$(getPasswordFromKeychain)"'\r"
+							exp_continue
+						}
+						timeout {
+							exit 1
+						}
+						eof {
+							return
+						}
+					}
+					catch wait result
+					exit [lindex $result 3]' 2>&1)"
 				_RC=${?}
 				;;
 			cifs)
-				_RV="$(mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} "${Protocol}://${Account}:$(getPasswordFromKeychain)@${Server}/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
+				_RV="$(${LAUNCHASUSER} expect -c '
+					set timeout '${MaxRetryInSeconds}'
+					'"${EXPECTDEBUG}"'
+					spawn /sbin/mount -t '"${Protocol}"''"${MountOptions:+ -o ${MountOptions}}"' //'"${Account}"'@'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+					expect {
+						"sword:" {
+							send -- "'"$(getPasswordFromKeychain)"'\r"
+							exp_continue
+						}
+						timeout {
+							exit 1
+						}
+						eof {
+							return
+						}
+					}
+					catch wait result
+					exit [lindex $result 3]' 2>&1)"
 				_RC=${?}
 				;;
 			*)
@@ -557,10 +759,12 @@ function processMountlist {
 	done
 	if [ ${_EC} -eq ${SUCCESS} ]; then
 		if [ ${MountedShares} -eq ${MountlistIndex} ]; then
-			log --priority=${LOG_INFO} "automount runned successfully."
-		fi
-		if [ ${BACKGROUND} -eq ${YES} ]; then
-			${LAUNCHASUSER} /usr/bin/osascript -e "display notification \"automount runned successfully.\" with title \"automount\" subtitle \"\""
+			log --priority=${LOG_INFO} "All shares mountd successfully."
+			if [ ${BACKGROUND} -eq ${YES} ]; then
+				${LAUNCHASUSER} /usr/bin/osascript -e "display notification \"All shares mounted successfully.\" with title \"automount\" subtitle \"\""
+			fi
+		else
+			log --priority=${LOG_INFO} "Some shares mountd successfully."
 		fi
 	else
 		log --priority=${LOG_ERROR} "automount runned with errors."
@@ -574,7 +778,6 @@ function processMountlist {
 
 function addPassword {
 	local _Account="${Account:-${LOGINNAME}}"
-	local _AccountHomeDirectory="$(dscl . read /Users/${_Account} NFSHomeDirectory | cut -d' ' -f2-)"
 	local _AppAccess=""
 	local _RV=""
 	local -i RC=0
@@ -589,14 +792,14 @@ function addPassword {
 		-j "${SCRIPTNAME}" \
 		-r "$(getKeychainProtocol)" \
 		-s "${Server}" \
-		-w "$(read -p "Password: " -s && echo "${REPLY}"; unset REPLY)" \
+		-w "$(read -r -p "Password: " -s && echo "${REPLY}"; unset REPLY)" \
 		-U \
 		-T /usr/bin/security \
 		-T /System/Library/CoreServices/NetAuthAgent.app/Contents/MacOS/NetAuthSysAgent \
 		-T /System/Library/CoreServices/NetAuthAgent.app \
 		-T group://NetAuth \
 		${_AppAccess} \
-		"${_AccountHomeDirectory}"/Library/Keychains/login.keychain 2>&1)"
+		"${LOGINHOME}"/Library/Keychains/login.keychain 2>&1)"
 	_RC=${?}
 
 	if [ ${_RC} -eq ${SUCCESS} ]; then
@@ -719,7 +922,7 @@ while :; do
 				Action="processMountlist"
 				;;
 			-v|--verbose)
-				Verbose="-v"
+				((Verbose++))
 				;;
 			--) # End of all options.
 				shift

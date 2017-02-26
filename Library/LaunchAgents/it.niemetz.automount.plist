@@ -8,14 +8,18 @@
 	<string>Aqua</string>
 	<key>RunAtLoad</key>
 	<true/>
+	<!-- no longer implemented as stated in man page
 	<key>KeepAlive</key>
 	<dict>
 		<key>NetworkState</key>
 		<true/>
 	</dict>
+	-->
 	<key>WatchPaths</key>
 	<array>
-		<string>/Library/Preferences/SystemConfiguration</string>
+		<string>/etc/resolv.conf</string>
+		<string>/Library/Preferences/SystemConfiguration/NetworkInterfaces.plist</string>
+		<string>/Library/Preferences/SystemConfiguration/com.apple.airport.preferences.plist</string>
 	</array>
 	<key>ProgramArguments</key>
 	<array>
