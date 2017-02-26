@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 # CONSTANTS
-declare -r SCRIPTLASTMOD="2017-02-25"
-declare -r SCRIPTVERSION="0.90.16"
+declare -r SCRIPTLASTMOD="2017-02-26"
+declare -r SCRIPTVERSION="0.90.17"
 declare -r DEBUG="false"
 if [ "${DEBUG}" == "false" ]; then
 	set +xv
@@ -606,6 +606,7 @@ function processMountlist {
 					expect {
 						"name:" {
 							send -- "'"${Account}"'\r"
+							exp_continue
 						}
 						"sword:" {
 							send -- "'$(getPasswordFromKeychain)'\r"
