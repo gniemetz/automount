@@ -15,7 +15,7 @@ Try automount!
 
 Drop `automount.sh` into `/usr/local/bin`, define the shares you want to mount in `~/Library/Preferences/it.niemetz.automount.plist` and set up a LaunchAgent with `~/Library/LauchAgents/it.niemetz.automount.plist`
 
-Log in ~/Library/Logs/automount.log
+Log in `~/Library/Logs/automount.log`
 
 
 Look into the `Library` folders for further documentation
