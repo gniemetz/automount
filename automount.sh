@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # CONSTANTS
-declare -r SCRIPTLASTMOD="2017-02-27"
-declare -r SCRIPTVERSION="0.90.18"
+declare -r SCRIPTLASTMOD="2017-02-28"
+declare -r SCRIPTVERSION="0.90.19"
 declare -r DEBUG="false"
 if [ "${DEBUG}" == "false" ]; then
 	set +xv
@@ -603,12 +603,12 @@ function processMountlist {
 					'"${EXPECTDEBUG}"'
 					spawn /sbin/mount_webdav -s -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
 					expect {
-						"name:" {
+						-re ".*ser.*|.*name.*" {
 							send -- "'"${Account}"'\r"
 							exp_continue
 						}
-						"sword:" {
-							send -- "'$(getPasswordFromKeychain)'\r"
+						-re ".*ssword.*" {
+							send -- "'$(getPasswordFromKeychain | convertToHexCode)'\r"
 							exp_continue
 						}
 						timeout {
@@ -629,11 +629,11 @@ function processMountlist {
 					'"${EXPECTDEBUG}"'
 					spawn /sbin/mount_ftp -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
 					expect {
-						"name:" {
+						-re ".*ser.*|.*name.*" {
 							send -- "'"${Account}"'\r"
 						}
-						"sword:" {
-							send -- "'$(getPasswordFromKeychain)'\r"
+						-re ".*ssword.*" {
+							send -- "'$(getPasswordFromKeychain | convertToHexCode)'\r"
 							exp_continue
 						}
 						timeout {
@@ -658,7 +658,7 @@ function processMountlist {
 					'"${EXPECTDEBUG}"'
 					spawn /sbin/mount_afp -i -s'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
 					expect {
-						"ser:" {
+						-re ".*ser.*" {
 							if {"'"${Domain}"'" == ""} {
 								send -- "'"${Account}"'\r"
 							} else {
@@ -666,7 +666,7 @@ function processMountlist {
 							}
 							exp_continue
 						}
-						"sword:" {
+						-re ".*ssword.*" {
 							send -- "'"$(getPasswordFromKeychain | convertToHexCode)"'\r"
 							exp_continue
 						}
@@ -685,9 +685,9 @@ function processMountlist {
 				_RV="$(${LAUNCHASUSER} expect -c '
 					set timeout '${MaxRetryInSeconds}'
 					'"${EXPECTDEBUG}"'
-					spawn /sbin/mount_smbfs -o soft'"${MountOptions:+,${MountOptions}}"' //'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+					spawn /sbin/mount_smbfs -o soft'"${MountOptions:+,${MountOptions}}"' //'"${Domain:+${Domain};}${Account}"'@'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
 					expect {
-						"ser:" {
+						-re "..*ser.*|.*name.*" {
 							if {"'"${Domain}"'" == ""} {
 								send -- "'"${Account}"'\r"
 							} else {
@@ -695,8 +695,8 @@ function processMountlist {
 							}
 							exp_continue
 						}
-						"sword:" {
-							send -- "'"$(getPasswordFromKeychain)"'\r"
+						-re ".*ssword.*" {
+							send -- "'"$(getPasswordFromKeychain | convertToHexCode)"'\r"
 							exp_continue
 						}
 						timeout {
@@ -716,8 +716,8 @@ function processMountlist {
 					'"${EXPECTDEBUG}"'
 					spawn /sbin/mount -t '"${Protocol}"''"${MountOptions:+ -o ${MountOptions}}"' //'"${Account}"'@'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
 					expect {
-						"sword:" {
-							send -- "'"$(getPasswordFromKeychain)"'\r"
+						-re ".*ssword.*" {
+							send -- "'"$(getPasswordFromKeychain | convertToHexCode)"'\r"
 							exp_continue
 						}
 						timeout {
