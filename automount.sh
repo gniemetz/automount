@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # CONSTANTS
 declare -r SCRIPTLASTMOD="2017-02-28"
-declare -r SCRIPTVERSION="0.90.19"
+declare -r SCRIPTVERSION="0.90.20"
 declare -r DEBUG="false"
 if [ "${DEBUG}" == "false" ]; then
 	set +xv
@@ -685,7 +685,7 @@ function processMountlist {
 				_RV="$(${LAUNCHASUSER} expect -c '
 					set timeout '${MaxRetryInSeconds}'
 					'"${EXPECTDEBUG}"'
-					spawn /sbin/mount_smbfs -o soft'"${MountOptions:+,${MountOptions}}"' //'"${Domain:+${Domain};}${Account}"'@'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+					spawn /sbin/mount_smbfs -o soft'"${MountOptions:+,${MountOptions}}"' "//'"${Domain:+${Domain};}${Account}"'@'"${Server}"'/'"${Share}"'" '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
 					expect {
 						-re "..*ser.*|.*name.*" {
 							if {"'"${Domain}"'" == ""} {
