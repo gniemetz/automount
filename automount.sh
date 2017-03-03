@@ -242,7 +242,7 @@ declare -r MOUNTOPTIONS="nodev,nosuid"
 declare -ra PROTOCOLMAPPING=( 'afp="afp "' 'cifs="cifs"' 'ftp="ftp "' 'http="http"' 'https="htps"' 'smb="smb "' )
 # ping -t timeout
 declare -ir PINGTIMEOUT=1
-if [[ ${OSVERSION_INTEGER} -ge 101200 && ${LOGINID} -ne 0 ]]; then
+if [[ ${OSVERSION_INTEGER} -ge 101200 || ${LOGINID} -ne 0 ]]; then
 	# mountpoint absolute pathname
 	MOUNTPOINT_APN="${LOGINHOME}/Volumes"
 else
