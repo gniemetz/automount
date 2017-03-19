@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # CONSTANTS
-declare -r SCRIPTLASTMOD="2017-02-28"
-declare -r SCRIPTVERSION="0.90.20"
+declare -r SCRIPTLASTMOD="2017-03-19"
+declare -r SCRIPTVERSION="0.90.26"
 declare -r DEBUG="false"
-if [ "${DEBUG}" == "false" ]; then
+if [ "${DEBUG}" = "false" ]; then
 	set +xv
 	EXPECTDEBUG="log_user 0"
 else
@@ -47,11 +47,11 @@ declare -ri FALSE=${NO}
 declare -ri MISSING=${NO}
 # os x version array major minor patch
 declare -air OSVERSION=( $(sw_vers | awk -F'[: |.]' '/ProductVersion/ { printf("%d %d %d", $2, $3, $4) }') )
-# os x version as integer 
+# os x version as integer
 declare -ir OSVERSION_INTEGER=10#$(printf '%02d%02d%02d' "${OSVERSION[0]}" "${OSVERSION[1]}" "${OSVERSION[2]}")
 # script path name
 SCRIPT_PN="${0%/*}"
-if [ "${SCRIPT_PN}" == "." ]; then
+if [ "${SCRIPT_PN}" = "." ]; then
 	SCRIPT_PN="${PWD}"
 elif [ "${SCRIPT_PN:0:1}" != "/" ]; then
 	SCRIPT_PN="$(which ${0})"
@@ -62,7 +62,7 @@ declare -r SCRIPT_FN="${0##*/}"
 SCRIPTNAME="${SCRIPT_FN%.*}"
 # script filename extension
 SCRIPTEXTENSION=${SCRIPT_FN##*.}
-if [ "${SCRIPTNAME}" == "" ]; then
+if [ "${SCRIPTNAME}" = "" ]; then
 	SCRIPTNAME=".${SCRIPTEXTENSION}"
 	SCRIPTEXTENSION=""
 fi
@@ -123,30 +123,30 @@ function readDS {
 																awk -F"${_FS}" \
 																	-v DSKey="${_DSKey}" \
 																'BEGIN {
-																	Value=""
-																	KeywordFound=0
+																	DSValue=""
+																	DSKeyFound=0
 																}
 																function getValuesFromPosition(StartPosition) {
 																	for(FieldNr=StartPosition; FieldNr <= NF; FieldNr++) {
-																		Value = (Value == "" ? "" : Value FS) $FieldNr
+																		DSValue = (DSValue == "" ? "" : DSValue FS) $FieldNr
 																	}
 																}
-																KeywordFound == 1 {
+																DSKeyFound == 1 {
 																	getValuesFromPosition(1)
-																	KeywordFound=0
+																	DSKeyFound=0
 																}
 																$1 == DSKey {
 																	if(NF > 1) {
 																		getValuesFromPosition(2)
 																 	} else {
-																 		KeywordFound=1
+																 		DSKeyFound=1
 																 		next
 																 	}
 																}
 																END {
 																	# trim leading space
-																	gsub(/^[[:space:]]+/, "", Value)
-																	printf("%s", Value)
+																	gsub(/^[[:space:]]+/, "", DSValue)
+																	printf("%s", DSValue)
 																}')"; then
 		echo "${_DSValue}"
 		return ${SUCCESS}
@@ -178,7 +178,11 @@ else
 	declare -i LOGINID="$(readDS --account="${LOGINNAME}" --key="UniqueID")"
 	declare -i LOGINPRIMARYGROUPID="$(readDS --account="${LOGINNAME}" --key="PrimaryGroupID")"
 	LOGINHOME="$(readDS --account="${LOGINNAME}" --key="NFSHomeDirectory")"
-	LAUNCHASUSER="launchctl asuser ${LOGINID} chroot -u ${LOGINID} -g ${LOGINPRIMARYGROUPID} /"
+	if [[ ${OSVERSION_INTEGER} -ge 101000 ]]; then
+		LAUNCHASUSER="launchctl asuser ${LOGINID} chroot -u ${LOGINID} -g ${LOGINPRIMARYGROUPID} /"
+	elif [[ ${OSVERSION_INTEGER} -le 100900 ]]; then
+		LAUNCHASUSER="launchctl bsexec ${LOGINID} chroot -u ${LOGINID} -g ${LOGINPRIMARYGROUPID} /"
+	fi
 fi
 declare -r LOGINNAME LOGINID LOGINPRIMARYGROUPID LOGINHOME LAUNCHASUSER
 # case $(ps -o state= -p ${$}) in
@@ -230,6 +234,25 @@ LOG_LEVEL[${#LOG_LEVEL[@]}]="Info"
 declare -ir LOG_DEBUG=${#LOG_LEVEL[@]}
 LOG_LEVEL[${#LOG_LEVEL[@]}]="Debug"
 declare -r LOG_LEVEL
+# logfile delimiter
+declare -r LOG_DELIMITER=$'|'
+# signals
+declare -a SIGNALS
+declare -ir EXIT=0
+SIGNALS[${EXIT}]="EXIT (${EXIT}): exit (bash)"
+declare -ir SIGHUP=1
+SIGNALS[${SIGHUP}]="SIGHUP (${SIGHUP}): terminal line hangup (Ctrl + D)"
+declare -ir SIGINT=2
+SIGNALS[${SIGINT}]="SIGINT (${SIGINT}): interrupt program (Ctrl + C)"
+declare -ir SIGQUIT=3
+SIGNALS[${SIGQUIT}]="SIGQUIT (${SIGQUIT}): quit program"
+declare -ir SIGTERM=15
+SIGNALS[${SIGTERM}]="SIGTERM (${SIGTERM}): software termination signal"
+declare -ir SIGUSR1=30
+SIGNALS[${SIGUSR1}]="SIGUSR1 (${SIGUSR1}): User defined signal 1"
+declare -ir SIGUSR2=31
+SIGNALS[${SIGUSR2}]="SIGUSR2 (${SIGUSR2}): User defined signal 2"
+declare -r SIGNALS
 # automount plist (absolute file name)
 declare -r AUTOMOUNTPLIST_AFN="${LOGINHOME}/Library/Preferences/it.niemetz.automount.plist"
 # login keychain (absolute file name)
@@ -266,30 +289,30 @@ CommonAccount=""
 ValidIPRanges=""
 MountOptions=""
 MaxRetryInSeconds=""
+declare -i Simulate=${NO}
 Protocol=""
 Domain=""
 Account=""
 Server=""
 Share=""
 MountPoint=""
-declare -i MountedShares=0
+declare -i SuccessfullyMountedShares=0
+declare -i AlreadyMountedShares=0
 # Action to do
 Action=""
 # verbose
 declare -i Verbose=0
-# redirect stdout
-RedirectStdout="/dev/null"
 
 # Function definitions
 function log {
 	local _DateFormat='%Y-%m-%d %T %z'
-	local _Delimiter="|"
+	local _Delimiter="${LOG_DELIMITER:-|}"
 	local -i _Priority=6
 
 	while :; do
 		case ${1} in
 				-p|--priority)
-					if [[ -n "${2}" && "${2:0:1}" != "--" && "${2:0:1}" != "-" ]]; then
+					if [[ -n "${2}" && "${2:0:2}" != "--" && "${2:0:2}" != "-" ]]; then
 						if ! _Priority=${2} 2>/dev/null; then
 							printf 'ERROR: "%s" requires a numeric option argument.\n' "${1}" >&2
 							return ${ERROR}
@@ -334,13 +357,30 @@ function log {
 }
 
 function cleanup {
+	local -i _Signal=${1}
 	rm -rf "${LOCK_APN}" >/dev/null 2>&1
+	trap -- ${SIGHUP} ${SIGINT} ${SIGQUIT} ${SIGTERM} ${EXIT}
 	exit ${1}
+}
+
+function onExit {
+	# executed before exiting, activate with "trap 'onExit' EXIT"
+	local -i _ExitCode=${?}
+	:
+	exit ${_ExitCode}
+}
+
+function catchTrap {
+	local _Signal
+	local _Func="${1}"; shift
+	for _Signal; do
+		trap "${_Func} ${_Signal}" "${_Signal}"
+	done
 }
 
 function showUsage {
   cat <<EOH
-Usage: ${SCRIPT_FN} (V${SCRIPTVERSION} ${SCRIPTLASTMOD}) (-m|--mountall)|--addpassword (-p|--protocol) protocol (-s|--server) server [(-a|--account) account] [(-d|--description) description]
+Usage: ${SCRIPT_FN} (V${SCRIPTVERSION} ${SCRIPTLASTMOD}) (-m|--mountall)|(-n|--simulate)|(--addpassword (-p|--protocol) protocol (-s|--server) server [(-a|--account) account] [(-d|--description) description])
 EOH
 }
 
@@ -348,6 +388,7 @@ function getIPAddresses {
 	local _IPAddresses=""
 	local -i _Sleep=0
 
+	ipconfig waitall
 	while [[ ( -z "${_IPAddresses}" || "${_IPAddresses}" =~ (^| )169\.[0-9]+\.[0-9]+\.[0-9]+( |$) ) && ${_Sleep} -lt 10 ]]; do
 		sleep ${_Sleep}
 		((_Sleep++))
@@ -358,19 +399,19 @@ function getIPAddresses {
 			/usr/bin/awk \
 				'
 				BEGIN {
-					device=""
+					Device=""
 				}
 				/(^en[0-9]*:|^utun[0-9]*).*UP.*RUNNING/ {
-					device=$1
+					Device=$1
 					next
 				}
-				$1 == "inet" && device != "" {
-					output=sprintf("%s%s", (output == "" ? "" : output " "), $2)
-					device=""
+				$1 == "inet" && Device != "" {
+					IPAddresses=sprintf("%s%s", (IPAddresses == "" ? "" : IPAddresses " "), $2)
+					Device=""
 					next
 				}
 				END {
-					print output
+					print IPAddresses
 				}
 				'
 		)"
@@ -485,7 +526,7 @@ function readMountlistValues {
 	if [[ -n "${Protocol}" && -n "${Account}" && -n "${Server}" && -n "${Share}" ]]; then
 		return ${SUCCESS}
 	else
-		log --priority=${LOG_ERROR} "Protocol \"${Protocol}\"/Account \"${Account}\"/Server \"${Server}\"/Share \"${Share}\" empty"
+		log --priority=${LOG_ERROR} "Protocol '${Protocol}'/Account '${Account}'/Server '${Server}'/Share '${Share}' empty"
 		return ${ERROR}
 	fi
 }
@@ -501,9 +542,9 @@ function isInValidIPRange {
 				return ${YES}
 			fi
 		done
-		log --priority=${LOG_WARNING} "Not allowed to mount \"${Share}\" because \"${IPAddresses[@]}\" not in range of \"${_ValidIPRanges}\""
+		log --priority=${LOG_WARNING} "'${IPAddresses[@]}' not in range of '${_ValidIPRanges}'"
 		return ${NO}
-	fi 
+	fi
 	return ${YES}
 }
 
@@ -512,7 +553,7 @@ function isMounted {
 
 	if _RV="$(mount | egrep "//.*${Server}/(${Share})? on ${MOUNTPOINT_APN}/${Share} \(.*(, mounted by ${LOGINNAME})?\)$" 2>&1)"; then
 		if [ ${Verbose} -ne 0 ]; then
-			log --priority=${LOG_WARNING} "Share \"${Share}\" already mounted (RV=${_RV})"
+			log --priority=${LOG_WARNING} "Share '${Share}' already mounted (RV=${_RV})"
 		fi
 		return ${YES}
 	fi
@@ -529,7 +570,7 @@ function createMountpoint {
 			_RV="$( { mkdir -p ${Verbose} "${MOUNTPOINT_APN}/${_Share}" && chown "${LOGINID}:${LOGINPRIMARYGROUPID}" "${MOUNTPOINT_APN}/${_Share}" && chmod 755 "${MOUNTPOINT_APN}/${_Share}"; } 2>&1 )"
 			_RC=${?}
 			if [ ${_RC} -ne ${SUCCESS} ]; then
-				log --priority=${LOG_ERROR} "Could not create \"${MOUNTPOINT_APN}/${_Share}\" (RC=${_RC}, RV=${_RV})"
+				log --priority=${LOG_ERROR} "Could not create '${MOUNTPOINT_APN}/${_Share}' (RC=${_RC}, RV=${_RV})"
 				rmdir "${MOUNTPOINT_APN}/${_Share}" >/dev/null 2>&1
 				return ${ERROR}
 			fi
@@ -548,7 +589,7 @@ function processMountlist {
 	# if [[ ! ( -s "${AUTOMOUNTPLIST_AFN}" && ( -s "${LOGINKEYCHAIN_AFN}" || -s "${LOGINKEYCHAIN_AFN}-db" ) ) ]]; then
 		log --priority=${LOG_ERROR} "${AUTOMOUNTPLIST_AFN} and/or ${LOGINKEYCHAIN_AFN} are missing"
 		return ${ERROR}
-	fi		
+	fi
 
 	# get local ip address(es)
 	getIPAddresses
@@ -578,157 +619,182 @@ function processMountlist {
 
 		# is share already mounted?
 		if isMounted; then
+			((AlreadyMountedShares++))
 			((MountlistIndex++))
 			continue
-		fi			
+		fi
 
 		# is server reachable?
 		if ! isPingable "${Server}"; then
 			_EC=$((_EC||!${?}))
 			((MountlistIndex++))
 			continue
-		fi			
-					
+		fi
+
 		# create mountpoint
-		if ! createMountpoint "${MountPoint}"; then
+		if [ ${Simulate} -eq ${NO} ] && ! createMountpoint "${MountPoint}"; then
 			_EC=$((_EC||!${?}))
 			((MountlistIndex++))
 			continue
-		fi			
-					
+		fi
+
 		case ${Protocol} in
 			http|https)
-				_RV="$(${LAUNCHASUSER} expect -c '
-					set timeout '${MaxRetryInSeconds}'
-					'"${EXPECTDEBUG}"'
-					spawn /sbin/mount_webdav -s -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
-					expect {
-						-re ".*ser.*|.*name.*" {
-							send -- "'"${Account}"'\r"
-							exp_continue
+				if [ ${Simulate} -eq ${YES} ]; then
+					echo "/sbin/mount_webdav -s -i${MountOptions:+ -o ${MountOptions}} ${Protocol}://${Server} ${MOUNTPOINT_APN}/${MountPoint}"
+				else
+					_RV="$(${LAUNCHASUSER} expect -c '
+						set timeout '${MaxRetryInSeconds}'
+						'"${EXPECTDEBUG}"'
+						spawn /sbin/mount_webdav -s -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+						expect {
+							-re ".*ser.*|.*name.*" {
+								send -- "'"${Account}"'\r"
+								exp_continue
+							}
+							-re ".*ssword.*" {
+								send -- "'$(getPasswordFromKeychain | convertToHexCode)'\r"
+								exp_continue
+							}
+							timeout {
+								exit 1
+							}
+							eof {
+								return
+							}
 						}
-						-re ".*ssword.*" {
-							send -- "'$(getPasswordFromKeychain | convertToHexCode)'\r"
-							exp_continue
-						}
-						timeout {
-							exit 1
-						}
-						eof {
-							return
-						}
-					}
-					catch wait result
-					exit [lindex $result 3]
-					' 2>&1)"
+						catch wait result
+						exit [lindex $result 3]
+						' 2>&1)"
+				fi
 				_RC=${?}
 				;;
 			ftp)
-				_RV="$(${LAUNCHASUSER} expect -c '
-					set timeout '${MaxRetryInSeconds}'
-					'"${EXPECTDEBUG}"'
-					spawn /sbin/mount_ftp -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
-					expect {
-						-re ".*ser.*|.*name.*" {
-							send -- "'"${Account}"'\r"
+				if [ ${Simulate} -eq ${YES} ]; then
+					echo "/sbin/mount_ftp -i${MountOptions:+ -o ${MountOptions}} ${Protocol}://${Server} ${MOUNTPOINT_APN}/${MountPoint}"
+				else
+					_RV="$(${LAUNCHASUSER} expect -c '
+						set timeout '${MaxRetryInSeconds}'
+						'"${EXPECTDEBUG}"'
+						spawn /sbin/mount_ftp -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+						expect {
+							-re ".*ser.*|.*name.*" {
+								send -- "'"${Account}"'\r"
+								exp_continue
+							}
+							-re ".*ssword.*" {
+								send -- "'$(getPasswordFromKeychain | convertToHexCode)'\r"
+								exp_continue
+							}
+							eof {
+								return
+							}
+							timeout {
+								exit 1
+							}
 						}
-						-re ".*ssword.*" {
-							send -- "'$(getPasswordFromKeychain | convertToHexCode)'\r"
-							exp_continue
-						}
-						timeout {
-							exit 1
-						}
-						eof {
-							return
-						}
-					}
-					catch wait result
-					exit [lindex $result 3]
-					' 2>&1)"
+						catch wait result
+						exit [lindex $result 3]' 2>&1)"
+				fi
 				_RC=${?}
 				;;
 			nfs)
-				_RV="$(${LAUNCHASUSER} mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} "${Server}:/${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
+				if [ ${Simulate} -eq ${YES} ]; then
+					echo "/sbin/mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} ${Server}://${Share} ${MOUNTPOINT_APN}/${MountPoint}"
+				else
+					_RV="$(${LAUNCHASUSER} /sbin/mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} "${Server}://${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
+				fi
 				_RC=${?}
 				;;
 			afp)
-				_RV="$(${LAUNCHASUSER} expect -c '
-					set timeout '${MaxRetryInSeconds}'
-					'"${EXPECTDEBUG}"'
-					spawn /sbin/mount_afp -i -s'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
-					expect {
-						-re ".*ser.*" {
-							if {"'"${Domain}"'" == ""} {
-								send -- "'"${Account}"'\r"
-							} else {
-								send -- "'"${Domain}"';'"${Account}"'\r"
+				if [ ${Simulate} -eq ${YES} ]; then
+					echo "/sbin/mount_afp -i -s${MountOptions:+ -o ${MountOptions}} ${Protocol}://${Server}/${Share} ${MOUNTPOINT_APN}/${MountPoint}"
+				else
+					_RV="$(${LAUNCHASUSER} expect -c '
+						set timeout '${MaxRetryInSeconds}'
+						'"${EXPECTDEBUG}"'
+						spawn /sbin/mount_afp -i -s'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+						expect {
+							-re ".*ser.*" {
+								if {"'"${Domain}"'" == ""} {
+									send -- "'"${Account}"'\r"
+								} else {
+									send -- "'"${Domain}"';'"${Account}"'\r"
+								}
+								exp_continue
 							}
-							exp_continue
+							-re ".*ssword.*" {
+								send -- "'"$(getPasswordFromKeychain | convertToHexCode)"'\r"
+								exp_continue
+							}
+							timeout {
+								exit 1
+							}
+							eof {
+								return
+							}
 						}
-						-re ".*ssword.*" {
-							send -- "'"$(getPasswordFromKeychain | convertToHexCode)"'\r"
-							exp_continue
-						}
-						timeout {
-							exit 1
-						}
-						eof {
-							return
-						}
-					}
-					catch wait result
-					exit [lindex $result 3]' 2>&1)"
+						catch wait result
+						exit [lindex $result 3]' 2>&1)"
+				fi
 				_RC=${?}
 				;;
 			smb)
-				_RV="$(${LAUNCHASUSER} expect -c '
-					set timeout '${MaxRetryInSeconds}'
-					'"${EXPECTDEBUG}"'
-					spawn /sbin/mount_smbfs -o soft'"${MountOptions:+,${MountOptions}}"' "//'"${Domain:+${Domain};}${Account}"'@'"${Server}"'/'"${Share}"'" '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
-					expect {
-						-re "..*ser.*|.*name.*" {
-							if {"'"${Domain}"'" == ""} {
-								send -- "'"${Account}"'\r"
-							} else {
-								send -- "'"${Domain}"';'"${Account}"'\r"
+				if [ ${Simulate} -eq ${YES} ]; then
+					echo "/sbin/mount_smbfs -o soft${MountOptions:+,${MountOptions}} '//${Domain:+${Domain};}${Account}@${Server}/${Share}' ${MOUNTPOINT_APN}/${MountPoint}"
+				else
+					_RV="$(${LAUNCHASUSER} expect -c '
+						set timeout '${MaxRetryInSeconds}'
+						'"${EXPECTDEBUG}"'
+						spawn /sbin/mount_smbfs -o soft'"${MountOptions:+,${MountOptions}}"' "//'"${Domain:+${Domain};}${Account}"'@'"${Server}"'/'"${Share}"'" '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+						expect {
+							-re "..*ser.*|.*name.*" {
+								if {"'"${Domain}"'" == ""} {
+									send -- "'"${Account}"'\r"
+								} else {
+									send -- "'"${Domain}"';'"${Account}"'\r"
+								}
+								exp_continue
 							}
-							exp_continue
+							-re ".*ssword.*" {
+								send -- "'"$(getPasswordFromKeychain | convertToHexCode)"'\r"
+								exp_continue
+							}
+							timeout {
+								exit 1
+							}
+							eof {
+								return
+							}
 						}
-						-re ".*ssword.*" {
-							send -- "'"$(getPasswordFromKeychain | convertToHexCode)"'\r"
-							exp_continue
-						}
-						timeout {
-							exit 1
-						}
-						eof {
-							return
-						}
-					}
-					catch wait result
-					exit [lindex $result 3]' 2>&1)"
+						catch wait result
+						exit [lindex $result 3]' 2>&1)"
+				fi
 				_RC=${?}
 				;;
 			cifs)
-				_RV="$(${LAUNCHASUSER} expect -c '
-					set timeout '${MaxRetryInSeconds}'
-					'"${EXPECTDEBUG}"'
-					spawn /sbin/mount -t '"${Protocol}"''"${MountOptions:+ -o ${MountOptions}}"' //'"${Account}"'@'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
-					expect {
-						-re ".*ssword.*" {
-							send -- "'"$(getPasswordFromKeychain | convertToHexCode)"'\r"
-							exp_continue
+				if [ ${Simulate} -eq ${YES} ]; then
+					echo "/sbin/mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} '//${Account}@${Server}/${Share}' ${MOUNTPOINT_APN}/${MountPoint}"
+				else
+					_RV="$(${LAUNCHASUSER} expect -c '
+						set timeout '${MaxRetryInSeconds}'
+						'"${EXPECTDEBUG}"'
+						spawn /sbin/mount -t '"${Protocol}"''"${MountOptions:+ -o ${MountOptions}}"' "//'"${Account}"'@'"${Server}"'/'"${Share}"'" '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+						expect {
+							-re ".*ssword.*" {
+								send -- "'"$(getPasswordFromKeychain | convertToHexCode)"'\r"
+								exp_continue
+							}
+							timeout {
+								exit 1
+							}
+							eof {
+								return
+							}
 						}
-						timeout {
-							exit 1
-						}
-						eof {
-							return
-						}
-					}
-					catch wait result
-					exit [lindex $result 3]' 2>&1)"
+						catch wait result
+						exit [lindex $result 3]' 2>&1)"
+				fi
 				_RC=${?}
 				;;
 			*)
@@ -737,28 +803,34 @@ function processMountlist {
 				continue
 				;;
 		esac
-		if [ ${_RC} -eq ${SUCCESS} ]; then
-			log --priority=${LOG_INFO} "${Share} mounted successfully"
-			((MountedShares++))
-		else
-			log --priority=${LOG_ERROR} "mount of ${Share} failed (RC=${_RC}, RV=${_RV})"
+		if [ ${Simulate} -eq ${NO} ]; then
+			if [ ${_RC} -eq ${SUCCESS} ]; then
+				log --priority=${LOG_INFO} "${Share} mounted successfully"
+				((SuccessfullyMountedShares++))
+			else
+				log --priority=${LOG_ERROR} "mount of ${Share} failed (RC=${_RC}, RV=${_RV})"
+			fi
 		fi
 		_EC=$((_EC||_RC))
 		((MountlistIndex++))
 	done
-	if [ ${_EC} -eq ${SUCCESS} ]; then
-		if [ ${MountedShares} -eq ${MountlistIndex} ]; then
-			log --priority=${LOG_INFO} "All shares mountd successfully."
-			if [ ${BACKGROUND} -eq ${YES} ]; then
-				${LAUNCHASUSER} /usr/bin/osascript -e "display notification \"All shares mounted successfully.\" with title \"automount\" subtitle \"\""
+	if [ ${Simulate} -eq ${NO} ]; then
+		if [ ${_EC} -eq ${SUCCESS} ]; then
+			if [ ${SuccessfullyMountedShares} -eq ${MountlistIndex} ]; then
+				log --priority=${LOG_INFO} "All shares mountd successfully."
+				if [ ${BACKGROUND} -eq ${YES} ]; then
+					${LAUNCHASUSER} /usr/bin/osascript -e 'display notification "All shares mounted successfully." with title "automount" subtitle ""'
+				fi
+			else
+				if [ $((${SuccessfullyMountedShares}+${AlreadyMountedShares})) -ne ${MountlistIndex} ]; then
+					log --priority=${LOG_INFO} "Some shares mountd successfully."
+				fi
 			fi
 		else
-			log --priority=${LOG_INFO} "Some shares mountd successfully."
-		fi
-	else
-		log --priority=${LOG_ERROR} "automount runned with errors."
-		if [ ${BACKGROUND} -eq ${YES} ]; then
-			${LAUNCHASUSER} /usr/bin/osascript -e "display notification \"automount runned with errors.\" with title \"automount\" subtitle \"\""
+			log --priority=${LOG_ERROR} "automount runned with errors."
+			if [ ${BACKGROUND} -eq ${YES} ]; then
+				${LAUNCHASUSER} /usr/bin/osascript -e 'display notification "automount runned with errors." with title "automount" subtitle ""'
+			fi
 		fi
 	fi
 
@@ -822,7 +894,7 @@ function create_lock {
 			_RV="$( { rm -rf "${LOCK_APN}" && mkdir "${LOCK_APN}" && echo "${$}" > "${LOCK_AFN}"; } 2>&1 || false )"
 			_RC=${?}
 			if [ ${_RC} -ne ${SUCCESS} ]; then
-				log --priority=${LOG_ERROR} "Could not create \"${LOCK_AFN}\", exiting (RC=${_RC}, RV=${_RV})"
+				log --priority=${LOG_ERROR} "Could not create '${LOCK_AFN}', exiting (RC=${_RC}, RV=${_RV})"
 				exit 1
 			fi
 		fi
@@ -831,7 +903,7 @@ function create_lock {
 
 # Main
 # catch traps
-trap 'cleanup' SIGHUP SIGINT SIGQUIT SIGTERM EXIT
+catchTrap 'cleanup' ${SIGHUP} ${SIGINT} ${SIGQUIT} ${SIGTERM}
 create_lock
 
 while :; do
@@ -840,8 +912,28 @@ while :; do
 				showUsage
 				exit
 				;;
+			-n|--simulate)
+				Simulate=${YES}
+				Action="processMountlist"
+				;;
+			-o|--domain)
+				if [[ -n "${2}" && "${2:0:2}" != "--" && "${2:0:1}" != "-" ]]; then
+					Domain="${2}"
+					shift
+				else
+					printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+					exit 1
+				fi
+				;;
+			--domain=?*)
+				Domain=${1#*=} # Delete everything up to "=" and assign the remainder.
+				;;
+			--domain=) # Handle the case of an empty --domain=
+				printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+				exit 1
+				;;
 			-a|--account)
-				if [[ -n "${2}" && "${2:0:1}" != "--" && "${2:0:1}" != "-" ]]; then
+				if [[ -n "${2}" && "${2:0:2}" != "--" && "${2:0:1}" != "-" ]]; then
 					Account="${2}"
 					shift
 				else
@@ -857,7 +949,7 @@ while :; do
 				exit 1
 				;;
 			-d|--description)
-				if [[ -n "${2}" && "${2:0:1}" != "--" && "${2:0:1}" != "-" ]]; then
+				if [[ -n "${2}" && "${2:0:2}" != "--" && "${2:0:1}" != "-" ]]; then
 					Description="${2}"
 					shift
 				else
@@ -873,7 +965,7 @@ while :; do
 				exit 1
 				;;
 			-p|--protocol)
-				if [[ -n "${2}" && "${2:0:1}" != "--" && "${2:0:1}" != "-" ]]; then
+				if [[ -n "${2}" && "${2:0:2}" != "--" && "${2:0:1}" != "-" ]]; then
 					Protocol="${2}"
 					shift
 				else
@@ -889,7 +981,7 @@ while :; do
 				exit 1
 				;;
 			-s|--server)
-				if [[ -n "${2}" && "${2:0:1}" != "--" && "${2:0:1}" != "-" ]]; then
+				if [[ -n "${2}" && "${2:0:2}" != "--" && "${2:0:1}" != "-" ]]; then
 					Server="${2}"
 					shift
 				else
