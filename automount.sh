@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # CONSTANTS
-declare -r SCRIPTLASTMOD="2017-03-13"
-declare -r SCRIPTVERSION="0.90.24"
+declare -r SCRIPTLASTMOD="2017-03-19"
+declare -r SCRIPTVERSION="0.90.26"
 declare -r DEBUG="false"
 if [ "${DEBUG}" = "false" ]; then
 	set +xv
@@ -296,7 +296,8 @@ Account=""
 Server=""
 Share=""
 MountPoint=""
-declare -i MountedShares=0
+declare -i SuccessfullyMountedShares=0
+declare -i AlreadyMountedShares=0
 # Action to do
 Action=""
 # verbose
@@ -311,7 +312,7 @@ function log {
 	while :; do
 		case ${1} in
 				-p|--priority)
-					if [[ -n "${2}" && "${2:0:1}" != "--" && "${2:0:1}" != "-" ]]; then
+					if [[ -n "${2}" && "${2:0:2}" != "--" && "${2:0:2}" != "-" ]]; then
 						if ! _Priority=${2} 2>/dev/null; then
 							printf 'ERROR: "%s" requires a numeric option argument.\n' "${1}" >&2
 							return ${ERROR}
@@ -379,7 +380,7 @@ function catchTrap {
 
 function showUsage {
   cat <<EOH
-Usage: ${SCRIPT_FN} (V${SCRIPTVERSION} ${SCRIPTLASTMOD}) (-m|--mountall)|(-n|--simulate)|--addpassword (-p|--protocol) protocol (-s|--server) server [(-a|--account) account] [(-d|--description) description]
+Usage: ${SCRIPT_FN} (V${SCRIPTVERSION} ${SCRIPTLASTMOD}) (-m|--mountall)|(-n|--simulate)|(--addpassword (-p|--protocol) protocol (-s|--server) server [(-a|--account) account] [(-d|--description) description])
 EOH
 }
 
@@ -618,7 +619,7 @@ function processMountlist {
 
 		# is share already mounted?
 		if isMounted; then
-			((MountedShares++))
+			((AlreadyMountedShares++))
 			((MountlistIndex++))
 			continue
 		fi
@@ -805,7 +806,7 @@ function processMountlist {
 		if [ ${Simulate} -eq ${NO} ]; then
 			if [ ${_RC} -eq ${SUCCESS} ]; then
 				log --priority=${LOG_INFO} "${Share} mounted successfully"
-				((MountedShares++))
+				((SuccessfullyMountedShares++))
 			else
 				log --priority=${LOG_ERROR} "mount of ${Share} failed (RC=${_RC}, RV=${_RV})"
 			fi
@@ -815,18 +816,20 @@ function processMountlist {
 	done
 	if [ ${Simulate} -eq ${NO} ]; then
 		if [ ${_EC} -eq ${SUCCESS} ]; then
-			if [ ${MountedShares} -eq ${MountlistIndex} ]; then
+			if [ ${SuccessfullyMountedShares} -eq ${MountlistIndex} ]; then
 				log --priority=${LOG_INFO} "All shares mountd successfully."
 				if [ ${BACKGROUND} -eq ${YES} ]; then
-					${LAUNCHASUSER} /usr/bin/osascript -e "display notification 'All shares mounted successfully.' with title 'automount' subtitle ''"
+					${LAUNCHASUSER} /usr/bin/osascript -e 'display notification "All shares mounted successfully." with title "automount" subtitle ""'
 				fi
 			else
-				log --priority=${LOG_INFO} "Some shares mountd successfully."
+				if [ $((${SuccessfullyMountedShares}+${AlreadyMountedShares})) -ne ${MountlistIndex} ]; then
+					log --priority=${LOG_INFO} "Some shares mountd successfully."
+				fi
 			fi
 		else
 			log --priority=${LOG_ERROR} "automount runned with errors."
 			if [ ${BACKGROUND} -eq ${YES} ]; then
-				${LAUNCHASUSER} /usr/bin/osascript -e "display notification 'automount runned with errors.' with title 'automount' subtitle ''"
+				${LAUNCHASUSER} /usr/bin/osascript -e 'display notification "automount runned with errors." with title "automount" subtitle ""'
 			fi
 		fi
 	fi
