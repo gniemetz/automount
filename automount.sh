@@ -75,7 +75,7 @@ function readDS {
 	while :; do
 		case ${1} in
 			-a|--account)
-				if [[ -n "${2}" && "${2:0:1}" != "--" && "${2:0:1}" != "-" ]]; then
+				if [[ -n "${2}" && "${2:0:2}" != "--" && "${2:0:1}" != "-" ]]; then
 					_Account="${2}"
 					shift
 				else
@@ -91,7 +91,7 @@ function readDS {
 				return ${ERROR}
 				;;
 			-k|--key)
-				if [[ -n "${2}" && "${2:0:1}" != "--" && "${2:0:1}" != "-" ]]; then
+				if [[ -n "${2}" && "${2:0:2}" != "--" && "${2:0:1}" != "-" ]]; then
 					_DSKey="${2}"
 					shift
 				else
