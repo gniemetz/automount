@@ -461,8 +461,6 @@ function getPasswordFromKeychain {
 		-l "${Server}" \
 		-j "${SCRIPTNAME}" \
 		"${LOGINKEYCHAIN_AFN}"
-		# xxd -p |\
-		# sed -e ':a' -e 'N' -e '$!ba' -e 's/\n//g' -e 's/\(..\)/\\x\1/g'
 	_RC=${?}
 
 	if [ ${_RC} -ne ${SUCCESS} ]; then
