@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CONSTANTS
+### CONSTANTS
 declare -r SCRIPTLASTMOD="2017-03-19"
 declare -r SCRIPTVERSION="0.90.26"
 declare -r DEBUG="false"
@@ -273,6 +273,8 @@ else
 fi
 
 # Global variables
+# mount name
+MountName=""
 # index counter
 declare -i MountlistIndex
 # is ip in valid range
@@ -379,9 +381,19 @@ function catchTrap {
 }
 
 function showUsage {
-  cat <<EOH
-Usage: ${SCRIPT_FN} (V${SCRIPTVERSION} ${SCRIPTLASTMOD}) (-m|--mountall)|(-n|--simulate)|(--addpassword (-p|--protocol) protocol (-s|--server) server [(-a|--account) account] [(-d|--description) description])
-EOH
+  cat <<EOU
+Usage: ${SCRIPT_FN} action [option(s)] (V${SCRIPTVERSION} ${SCRIPTLASTMOD})
+Actions: -m|--mountall
+             Mount all share described in ${AUTOMOUNTPLIST_AFN}. If switch -n|--simulate is set a simulation is done and nothing is mounted
+         --addpassword
+             Add a password to ${LOGINKEYCHAIN_AFN}
+             Mandatory switches: -p|--protocol <protocol> (possible values are afp, cifs, ftp, http, https or smb)
+                                 -s|--server <server>
+              Optional switches: -a|--account <account>
+                                 -d|--description <description>
+         --l|--list
+             List all configured share in ${AUTOMOUNTPLIST_AFN}
+EOU
 }
 
 function getIPAddresses {
@@ -504,9 +516,10 @@ function readMountlistValues {
 	local -i _Index=${1}
 
 	# first clear old values
-	unset ValidIPRanges MountOptions MaxRetryInSeconds Protocol Account Server Share MountPoint
+	unset MountName ValidIPRanges MountOptions MaxRetryInSeconds Protocol Account Server Share MountPoint
 
 	# get values
+	MountName="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:MountName" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 	ValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:ValidIPRanges" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 	ValidIPRanges="${ValidIPRanges:-${CommonValidIPRanges}}"
 	MountOptions="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:MountOptions" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
@@ -521,10 +534,10 @@ function readMountlistValues {
 	Share="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:Share" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 	MountPoint="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:MountPoint" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
 	MountPoint="${MountPoint:-${Share##*/}}"
-	if [[ -n "${Protocol}" && -n "${Account}" && -n "${Server}" && -n "${Share}" ]]; then
+	if [[ -n "${Protocol}" && -n "${Server}" && -n "${Share}" ]]; then
 		return ${SUCCESS}
 	else
-		log --priority=${LOG_ERROR} "Protocol '${Protocol}'/Account '${Account}'/Server '${Server}'/Share '${Share}' empty"
+		log --priority=${LOG_ERROR} "Protocol '${Protocol}'/Server '${Server}'/Share '${Share}' empty"
 		return ${ERROR}
 	fi
 }
@@ -549,7 +562,8 @@ function isInValidIPRange {
 function isMounted {
 	local _RV=""
 
-	if _RV="$(mount | egrep "//.*${Server}/(${Share})? on ${MOUNTPOINT_APN}/${Share} \(.*(, mounted by ${LOGINNAME})?\)$" 2>&1)"; then
+	# if _RV="$(mount | egrep "//.*${Server}/(${Share})? on ${MOUNTPOINT_APN}/${Share} \(.*(, mounted by ${LOGINNAME})?\)$" 2>&1)"; then
+	if _RV="$(mount | egrep "//(.*@)?${Server}/(${Share})? on .* \(.*(, mounted by ${LOGINNAME})?\)$" 2>&1)"; then
 		if [ ${Verbose} -ne 0 ]; then
 			log --priority=${LOG_WARNING} "Share '${Share}' already mounted (RV=${_RV})"
 		fi
@@ -575,6 +589,33 @@ function createMountpoint {
 		fi
 	fi
 	return ${SUCCESS}
+}
+
+function listMountlist {
+	local _RV=""
+	local _Delimiter=$'|'
+
+	# check all files exits
+	if [ ! -s "${AUTOMOUNTPLIST_AFN}" ] || [ ! -s "${LOGINKEYCHAIN_AFN}" ]; then
+	# if [[ ! ( -s "${AUTOMOUNTPLIST_AFN}" && ( -s "${LOGINKEYCHAIN_AFN}" || -s "${LOGINKEYCHAIN_AFN}-db" ) ) ]]; then
+		log --priority=${LOG_ERROR} "${AUTOMOUNTPLIST_AFN} and/or ${LOGINKEYCHAIN_AFN} are missing"
+		return ${ERROR}
+	fi
+
+	# initialize common values
+	initCommonValues
+
+	MountlistIndex=0
+	while /usr/libexec/PlistBuddy -c "Print Mountlist:${MountlistIndex}" "${AUTOMOUNTPLIST_AFN}" >/dev/null 2>&1; do
+		if ! readMountlistValues ${MountlistIndex}; then
+			_EC=$((_EC||!${?}))
+			((MountlistIndex++))
+			continue
+		fi
+
+		printf '%3d%s%s%s%s://%s@%s/%s%s%s\n' "${MountlistIndex}" "${_Delimiter}" "${MountName}" "${_Delimiter}" "${Protocol}" "${Account}" "${Server}" "${Share}" "${_Delimiter}" "${MOUNTPOINT_APN}/${MountPoint}"
+		((MountlistIndex++))
+	done
 }
 
 function processMountlist {
@@ -858,7 +899,7 @@ function addPassword {
 		-T /System/Library/CoreServices/NetAuthAgent.app \
 		-T group://NetAuth \
 		${_AppAccess} \
-		"${LOGINHOME}"/Library/Keychains/login.keychain 2>&1)"
+		"${LOGINKEYCHAIN}" 2>&1)"
 	_RC=${?}
 
 	if [ ${_RC} -eq ${SUCCESS} ]; then
@@ -899,20 +940,16 @@ function create_lock {
 	fi
 }
 
-# Main
+# parse arguments
 # catch traps
 catchTrap 'cleanup' ${SIGHUP} ${SIGINT} ${SIGQUIT} ${SIGTERM}
 create_lock
 
 while :; do
-	case ${1} in
+	case "${1}" in
 			-h|-\?|--help) # Call a "showUsage" function to display a synopsis, then exit.
 				showUsage
 				exit
-				;;
-			-n|--simulate)
-				Simulate=${YES}
-				Action="processMountlist"
 				;;
 			-o|--domain)
 				if [[ -n "${2}" && "${2:0:2}" != "--" && "${2:0:1}" != "-" ]]; then
@@ -997,11 +1034,30 @@ while :; do
 			--addpassword)
 				Action="addPassword"
 				;;
+			--addshare)
+				Action="addShare"
+				;;
+			--modifyshare)
+				Action="modifyShare"
+				;;
+			--deleteshare)
+				Action="deleteShare"
+				;;
+			-l|--list)
+				Action="listMountlist"
+				;;
+			-n|--simulate)
+				Simulate=${YES}
+				;;
 			-m|--mountall)
 				Action="processMountlist"
 				;;
 			-v|--verbose)
 				((Verbose++))
+				;;
+			-V|--version)
+				printf '%s V%s (%s)\n' "${SCRIPT_FN}" "${SCRIPTVERSION}" "${SCRIPTLASTMOD}"
+				exit 0
 				;;
 			--) # End of all options.
 				shift
@@ -1016,7 +1072,13 @@ while :; do
 	shift
 done
 
+# main
 case "${Action}" in
+	listMountlist)
+		${Action}
+		RC=${?}
+		exit ${RC}
+		;;
 	processMountlist)
 		${Action}
 		RC=${?}
@@ -1024,6 +1086,13 @@ case "${Action}" in
 		;;
 	addPassword)
 		if [[ -z "${Protocol}" || -z "${Server}" ]]; then
+			showUsage
+			exit
+		fi
+		${Action}
+		;;
+	addShare)
+		if [[ -z "${Protocol}" || -z "${Server}" || -z "${Share}" ]]; then
 			showUsage
 			exit
 		fi
