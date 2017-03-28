@@ -1,17 +1,23 @@
 #!/usr/bin/env bash
 ### CONSTANTS
-declare -r SCRIPTLASTMOD="2017-03-19"
-declare -r SCRIPTVERSION="0.90.26"
-declare -r DEBUG="false"
+declare -r SCRIPTLASTMOD="2017-03-28"
+declare -r SCRIPTVERSION="0.90.27"
+declare -r DEBUG="true"
 if [ "${DEBUG}" = "false" ]; then
 	set +xv
-	EXPECTDEBUG="log_user 0"
+	declare STDOUT_COLOR=""
+	declare STDERR_COLOR=""
+	declare COLOR_OFF=""
+	declare EXPECTDEBUG="log_user 0"
 else
 	PS4='+(${BASH_SOURCE:-}:${LINENO:-}): ${FUNCNAME[0]:+${FUNCNAME[0]:-}(): }'
 	set -xv
+	declare STDOUT_COLOR="\033[7;49;92m"
+	declare STDERR_COLOR="\033[7;49;91m"
+	declare COLOR_OFF="\033[0m"
 	EXPECTDEBUG="log_user 1"
 fi
-declare -r EXPECTDEBUG
+declare -r STDOUT_COLOR STDERR_COLOR COLOR_OFF EXPECTDEBUG
 #security add-internet-password \
 #	-a ACCOUNT \
 #	-l LABEL (same as SERVER) \
@@ -28,7 +34,7 @@ declare -r EXPECTDEBUG
 #	-T group://NetAuth \
 #	${LOGINHOME}/Library/Keychains/login.keychain
 
-#Server="SERVER"; Label="${Server}"; Description="DESCRIPTION"; Protocol="PROTOCOL"; Account="$(id -p | awk '/^login/ { print $2; exit } /^uid/ { print $2 }')"; UserHomeDirectory="$(dscl . read /Users/${Account} NFSHomeDirectory | cut -d' ' -f2-)"; security add-internet-password -a "${Account}" -l "${Label}" -D "${Description:-Netzwerkpasswort}" -j "automount" -r "$(printf "%-4s" ${Protocol})" -s "${Server}" -w "$(read -p "Password: " -s && echo "${REPLY}")" -U -T /usr/bin/security -T /System/Library/CoreServices/NetAuthAgent.app/Contents/MacOS/NetAuthSysAgent -T /System/Library/CoreServices/NetAuthAgent.app -T group://NetAuth ${UserHomeDirectory}/Library/Keychains/login.keychain
+#PrefsServer="SERVER"; Label="${PrefsServer}"; Description="DESCRIPTION"; PrefsProtocol="PROTOCOL"; PrefsAccount="$(id -p | awk '/^login/ { print $2; exit } /^uid/ { print $2 }')"; UserHomeDirectory="$(dscl . read /Users/${PrefsAccount} NFSHomeDirectory | cut -d' ' -f2-)"; security add-internet-password -a "${PrefsAccount}" -l "${Label}" -D "${Description:-Netzwerkpasswort}" -j "automount" -r "$(printf "%-4s" ${PrefsProtocol})" -s "${PrefsServer}" -w "$(read -p "Password: " -s && echo "${REPLY}")" -U -T /usr/bin/security -T /System/Library/CoreServices/NetAuthAgent.app/Contents/MacOS/NetAuthSysAgent -T /System/Library/CoreServices/NetAuthAgent.app -T group://NetAuth ${UserHomeDirectory}/Library/Keychains/login.keychain
 # when error "User interaction is not allowed." occurs, unlock keychain
 # RC=36 (security error 36 -> Error: 0x00000024 36 CSSM_ERRCODE_OBJECT_ACL_REQUIRED)
 #security unlock-keychain -p "LOGINNAME_PASSWORD" ${LOGINHOME}/Library/Keychains/login.keychain
@@ -79,7 +85,7 @@ function readDS {
 					_Account="${2}"
 					shift
 				else
-					printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+					printf "${STDERR_COLOR}"'ERROR: "%s" requires a non-empty option argument.\n'"${COLOR_OFF}" "${1}" >&2
 					return ${ERROR}
 				fi
 				;;
@@ -87,7 +93,7 @@ function readDS {
 				_Account=${1#*=} # Delete everything up to "=" and assign the remainder.
 				;;
 			--account=) # Handle the case of an empty --account=
-				printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+				printf "${STDERR_COLOR}"'ERROR: "%s" requires a non-empty option argument.\n'"${COLOR_OFF}" "${1}" >&2
 				return ${ERROR}
 				;;
 			-k|--key)
@@ -95,7 +101,7 @@ function readDS {
 					_DSKey="${2}"
 					shift
 				else
-					printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+					printf "${STDERR_COLOR}"'ERROR: "%s" requires a non-empty option argument.\n'"${COLOR_OFF}" "${1}" >&2
 					return ${ERROR}
 				fi
 				;;
@@ -103,7 +109,7 @@ function readDS {
 				_DSKey=${1#*=} # Delete everything up to "=" and assign the remainder.
 				;;
 			--key=) # Handle the case of an empty --key=
-				printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+				printf "${STDERR_COLOR}"'ERROR: "%s" requires a non-empty option argument.\n'"${COLOR_OFF}" "${1}" >&2
 				return ${ERROR}
 				;;
 			--) # End of all options.
@@ -111,7 +117,7 @@ function readDS {
 				break
 				;;
 			-?*)
-				printf 'WARN: Unknown option (ignored): %s\n' "${1}" >&2
+				printf "${STDERR_COLOR}"'WARN: Unknown option (ignored): %s\n' "${1}" >&2
 				;;
 			*) # Default case: If no more options then break out of the loop.
 				break
@@ -273,8 +279,6 @@ else
 fi
 
 # Global variables
-# mount name
-MountName=""
 # index counter
 declare -i MountlistIndex
 # is ip in valid range
@@ -284,26 +288,33 @@ declare -i EC=${SUCCESS}
 # array of ip addresses
 declare -a IPAddresses=()
 # late bound variables
-CommonMaxRetryInSeconds=""
-CommonValidIPRanges=""
-CommonMountOptions=""
-CommonAccount=""
-ValidIPRanges=""
-MountOptions=""
-MaxRetryInSeconds=""
+PrefsCommonMaxRetryInSeconds=""
+PrefsCommonValidIPRanges=""
+PrefsCommonMountOptions=""
+PrefsCommonAccount=""
+PrefsValidIPRanges=""
+PrefsMountOptions=""
+PrefsMaxRetryInSeconds=""
 declare -i Simulate=${NO}
-Protocol=""
-Domain=""
-Account=""
-Server=""
-Share=""
-MountPoint=""
+PrefsMountName=""
+PrefsProtocol=""
+PrefsDomain=""
+PrefsAccount=""
+PrefsServer=""
+PrefsShare=""
+PrefsMountPoint=""
 declare -i SuccessfullyMountedShares=0
 declare -i AlreadyMountedShares=0
 # Action to do
 Action=""
 # verbose
 declare -i Verbose=0
+# option values
+OptMountName=""
+OptProtocol=""
+OptDomain=""
+OptServer=""
+OptShare=""
 
 # Function definitions
 function log {
@@ -316,23 +327,23 @@ function log {
 				-p|--priority)
 					if [[ -n "${2}" && "${2:0:2}" != "--" && "${2:0:2}" != "-" ]]; then
 						if ! _Priority=${2} 2>/dev/null; then
-							printf 'ERROR: "%s" requires a numeric option argument.\n' "${1}" >&2
+							printf "${STDERR_COLOR}"'ERROR: "%s" requires a numeric option argument.\n'"${COLOR_OFF}" "${1}" >&2
 							return ${ERROR}
 						fi
 						shift
 					else
-						printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+						printf "${STDERR_COLOR}"'ERROR: "%s" requires a non-empty option argument.\n'"${COLOR_OFF}" "${1}" >&2
 						return ${ERROR}
 					fi
 					;;
 				--priority=?*)
 					if ! _Priority=${1#*=} 2>/dev/null; then
-						printf 'ERROR: "%s" requires a numeric option argument.\n' "${1}" >&2
+						printf "${STDERR_COLOR}"'ERROR: "%s" requires a numeric option argument.\n'"${COLOR_OFF}" "${1}" >&2
 						return ${ERROR}
 					fi
 					;;
 				--priority=)
-					printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+					printf "${STDERR_COLOR}"'ERROR: "%s" requires a non-empty option argument.\n'"${COLOR_OFF}" "${1}" >&2
 					return ${ERROR}
 					;;
 				--) # End of all options.
@@ -340,7 +351,7 @@ function log {
 					break
 					;;
 				-?*)
-					printf 'WARN: Unknown option (ignored): %s\n' "${1}" >&2
+					printf "${STDERR_COLOR}"'WARN: Unknown option (ignored): %s\n'"${COLOR_OFF}" "${1}" >&2
 					;;
 				*) # Default case: If no more options then break out of the loop.
 					break
@@ -350,9 +361,9 @@ function log {
 	set -- "${1:-$(</dev/stdin)}" "${@:2}"
 
 	if [ ${_Priority} -le 3 ]; then
-		echo "${1}" >&2
+		echo -e "${STDERR_COLOR}${1}${COLOR_OFF}" >&2
 	else
-		echo "${1}"
+		echo -e "${STDOUT_COLOR}${1}${COLOR_OFF}"
 	fi
 	echo "$(date +"${_DateFormat}")${_Delimiter}${$}${_Delimiter}${LOG_LEVEL[${_Priority}]}${_Delimiter}${1}" >>"${LOG_AFN}"
 	return ${SUCCESS}
@@ -384,15 +395,16 @@ function showUsage {
   cat <<EOU
 Usage: ${SCRIPT_FN} action [option(s)] (V${SCRIPTVERSION} ${SCRIPTLASTMOD})
 Actions: -m|--mountall
-             Mount all share described in ${AUTOMOUNTPLIST_AFN}. If switch -n|--simulate is set a simulation is done and nothing is mounted
+             Mount all share configured in ${AUTOMOUNTPLIST_AFN}
+                Optional switch: -n|--simulate (a simulation is done and nothing is mounted)
+         --l|--list
+             List all configured share(s) in ${AUTOMOUNTPLIST_AFN}
          --addpassword
              Add a password to ${LOGINKEYCHAIN_AFN}
-             Mandatory switches: -p|--protocol <protocol> (possible values are afp, cifs, ftp, http, https or smb)
+             Mandatory switches: -p|--protocol <protocol> (possible values are 'afp', 'cifs', 'ftp', 'http', 'https' or 'smb')
                                  -s|--server <server>
               Optional switches: -a|--account <account>
                                  -d|--description <description>
-         --l|--list
-             List all configured share in ${AUTOMOUNTPLIST_AFN}
 EOU
 }
 
@@ -439,7 +451,7 @@ function getIPAddresses {
 }
 
 function getKeychainProtocol {
-	local _SearchKeychainProtocol="${Protocol:-unknown_protocol}="
+	local _SearchKeychainProtocol="${PrefsProtocol:-unknown_protocol}="
 	local _Protocol _KeychainProtocol
 
 
@@ -469,8 +481,8 @@ function getPasswordFromKeychain {
 	security find-internet-password \
 		-w \
 		-r "$(getKeychainProtocol)" \
-		-a "${Account}" \
-		-l "${Server}" \
+		-a "${PrefsAccount}" \
+		-l "${PrefsServer}" \
 		-j "${SCRIPTNAME}" \
 		"${LOGINKEYCHAIN_AFN}"
 	_RC=${?}
@@ -489,55 +501,55 @@ function isPingable {
 	# return value
 	local _RV=""
 	if [ -n "${_Server}" ]; then
-		while ! _RV="$(ping -c 1 -t ${PINGTIMEOUT} -o -q "${_Server}" 2>&1)" && [ ${_Try} -le ${MaxRetryInSeconds} ]; do
+		while ! _RV="$(ping -c 1 -t ${PINGTIMEOUT} -o -q "${_Server}" 2>&1)" && [ ${_Try} -le ${PrefsMaxRetryInSeconds} ]; do
 			((_Try++))
 		done
-		if [ ${_Try} -gt ${MaxRetryInSeconds} ]; then
-			log --priority=${LOG_ERROR} "Could not ping ${Server} within ${MaxRetryInSeconds} (RC=${RC}, RV=${_RV})"
+		if [ ${_Try} -gt ${PrefsMaxRetryInSeconds} ]; then
+			log --priority=${LOG_ERROR} "Could not ping ${_Server} within ${PrefsMaxRetryInSeconds} (RC=${RC}, RV=${_RV})"
 			return ${ERROR}
 		fi
 	fi
 	return ${SUCCESS}
 }
 
-function initCommonValues {
+function initPrefsCommonValues {
 	# set global common values
-	CommonMaxRetryInSeconds=$(/usr/libexec/PlistBuddy -c "Print CommonMaxRetryInSeconds" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)
-	CommonMaxRetryInSeconds=${CommonMaxRetryInSeconds:-${MAXRETRYINSECONDS}}
-	CommonValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print CommonValidIPRanges" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-	CommonMountOptions="$(/usr/libexec/PlistBuddy -c "Print CommonMountOptions" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-	CommonMountOptions="${CommonMountOptions:-${MOUNTOPTIONS}}"
-	CommonAccount="$(/usr/libexec/PlistBuddy -c "Print CommonAccount" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-	CommonAccount="${CommonAccount:-${LOGINNAME}}"
+	PrefsCommonMaxRetryInSeconds=$(/usr/libexec/PlistBuddy -c "Print CommonMaxRetryInSeconds" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)
+	PrefsCommonMaxRetryInSeconds=${PrefsCommonMaxRetryInSeconds:-${MAXRETRYINSECONDS}}
+	PrefsCommonValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print CommonValidIPRanges" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+	PrefsCommonMountOptions="$(/usr/libexec/PlistBuddy -c "Print CommonMountOptions" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+	PrefsCommonMountOptions="${PrefsCommonMountOptions:-${MOUNTOPTIONS}}"
+	PrefsCommonAccount="$(/usr/libexec/PlistBuddy -c "Print CommonAccount" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+	PrefsCommonAccount="${PrefsCommonAccount:-${LOGINNAME}}"
 	return ${SUCCESS}
 }
 
-function readMountlistValues {
+function readPrefsMountlistValues {
 	local -i _Index=${1}
 
 	# first clear old values
-	unset MountName ValidIPRanges MountOptions MaxRetryInSeconds Protocol Account Server Share MountPoint
+	unset PrefsMountName PrefsValidIPRanges PrefsMountOptions PrefsMaxRetryInSeconds PrefsProtocol PrefsAccount PrefsServer PrefsShare PrefsMountPoint
 
 	# get values
-	MountName="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:MountName" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-	ValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:ValidIPRanges" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-	ValidIPRanges="${ValidIPRanges:-${CommonValidIPRanges}}"
-	MountOptions="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:MountOptions" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-	MountOptions="${MountOptions:-${CommonMountOptions}}"
-	MaxRetryInSeconds=$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:MaxRetryInSeconds" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)
-	MaxRetryInSeconds=${MaxRetryInSeconds:-${CommonMaxRetryInSeconds}}
-	Protocol="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:Protocol" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-	Domain="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:Domain" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-	Account="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:Account" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-	Account="${Account:-${CommonAccount}}"
-	Server="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:Server" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-	Share="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:Share" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-	MountPoint="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:MountPoint" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
-	MountPoint="${MountPoint:-${Share##*/}}"
-	if [[ -n "${Protocol}" && -n "${Server}" && -n "${Share}" ]]; then
+	PrefsMountName="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:MountName" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+	PrefsValidIPRanges="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:ValidIPRanges" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+	PrefsValidIPRanges="${PrefsValidIPRanges:-${PrefsCommonValidIPRanges}}"
+	PrefsMountOptions="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:MountOptions" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+	PrefsMountOptions="${PrefsMountOptions:-${PrefsCommonMountOptions}}"
+	PrefsMaxRetryInSeconds=$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:MaxRetryInSeconds" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)
+	PrefsMaxRetryInSeconds=${PrefsMaxRetryInSeconds:-${PrefsCommonMaxRetryInSeconds}}
+	PrefsProtocol="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:Protocol" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+	PrefsDomain="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:Domain" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+	PrefsAccount="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:Account" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+	PrefsAccount="${PrefsAccount:-${PrefsCommonAccount}}"
+	PrefsServer="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:Server" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+	PrefsShare="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:Share" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+	PrefsMountPoint="$(/usr/libexec/PlistBuddy -c "Print Mountlist:${_Index}:MountPoint" "${AUTOMOUNTPLIST_AFN}" 2>/dev/null)"
+	PrefsMountPoint="${PrefsMountPoint:-${PrefsShare##*/}}"
+	if [[ -n "${PrefsProtocol}" && -n "${PrefsServer}" && -n "${PrefsShare}" ]]; then
 		return ${SUCCESS}
 	else
-		log --priority=${LOG_ERROR} "Protocol '${Protocol}'/Server '${Server}'/Share '${Share}' empty"
+		log --priority=${LOG_ERROR} "PrefsProtocol '${PrefsProtocol}'/PrefsServer '${PrefsServer}'/PrefsShare '${PrefsShare}' empty"
 		return ${ERROR}
 	fi
 }
@@ -562,10 +574,10 @@ function isInValidIPRange {
 function isMounted {
 	local _RV=""
 
-	# if _RV="$(mount | egrep "//.*${Server}/(${Share})? on ${MOUNTPOINT_APN}/${Share} \(.*(, mounted by ${LOGINNAME})?\)$" 2>&1)"; then
-	if _RV="$(mount | egrep "//(.*@)?${Server}/(${Share})? on .* \(.*(, mounted by ${LOGINNAME})?\)$" 2>&1)"; then
+	# if _RV="$(mount | egrep "//.*${PrefsServer}/(${PrefsShare})? on ${MOUNTPOINT_APN}/${PrefsShare} \(.*(, mounted by ${LOGINNAME})?\)$" 2>&1)"; then
+	if _RV="$(mount | egrep "//(.*@)?${PrefsServer}/(${PrefsShare})? on .* \(.*(, mounted by ${LOGINNAME})?\)$" 2>&1)"; then
 		if [ ${Verbose} -ne 0 ]; then
-			log --priority=${LOG_WARNING} "Share '${Share}' already mounted (RV=${_RV})"
+			log --priority=${LOG_WARNING} "PrefsShare '${PrefsShare}' already mounted (RV=${_RV})"
 		fi
 		return ${YES}
 	fi
@@ -593,7 +605,7 @@ function createMountpoint {
 
 function listMountlist {
 	local _RV=""
-	local _Delimiter=$'|'
+	local _Delimiter=$'¦'
 
 	# check all files exits
 	if [ ! -s "${AUTOMOUNTPLIST_AFN}" ] || [ ! -s "${LOGINKEYCHAIN_AFN}" ]; then
@@ -603,19 +615,20 @@ function listMountlist {
 	fi
 
 	# initialize common values
-	initCommonValues
+	initPrefsCommonValues
 
 	MountlistIndex=0
 	while /usr/libexec/PlistBuddy -c "Print Mountlist:${MountlistIndex}" "${AUTOMOUNTPLIST_AFN}" >/dev/null 2>&1; do
-		if ! readMountlistValues ${MountlistIndex}; then
+		if ! readPrefsMountlistValues ${MountlistIndex}; then
 			_EC=$((_EC||!${?}))
 			((MountlistIndex++))
 			continue
 		fi
 
-		printf '%3d%s%s%s%s://%s@%s/%s%s%s\n' "${MountlistIndex}" "${_Delimiter}" "${MountName}" "${_Delimiter}" "${Protocol}" "${Account}" "${Server}" "${Share}" "${_Delimiter}" "${MOUNTPOINT_APN}/${MountPoint}"
+		LANG=de_AT.UTF-8 printf "${STDOUT_COLOR}"'%d%s%s%s%s://%s@%s/%s%s%s\n'"${COLOR_OFF}" "${MountlistIndex}" "${_Delimiter}" "${PrefsMountName}" "${_Delimiter}" "${PrefsProtocol}" "${PrefsAccount}" "${PrefsServer}" "${PrefsShare}" "${_Delimiter}" "${MOUNTPOINT_APN}/${PrefsMountPoint}"
 		((MountlistIndex++))
 	done
+	return 0
 }
 
 function processMountlist {
@@ -638,20 +651,20 @@ function processMountlist {
 	fi
 
 	# initialize common values
-	initCommonValues
+	initPrefsCommonValues
 
 	# process automount plist file
 	MountlistIndex=0
 	while /usr/libexec/PlistBuddy -c "Print Mountlist:${MountlistIndex}" "${AUTOMOUNTPLIST_AFN}" >/dev/null 2>&1; do
 		# get the values
-		if ! readMountlistValues ${MountlistIndex}; then
+		if ! readPrefsMountlistValues ${MountlistIndex}; then
 			_EC=$((_EC||!${?}))
 			((MountlistIndex++))
 			continue
 		fi
 
 		# check if in valid ip range
-		if ! isInValidIPRange "${ValidIPRanges}"; then
+		if ! isInValidIPRange "${PrefsValidIPRanges}"; then
 			((MountlistIndex++))
 			continue
 		fi
@@ -664,31 +677,31 @@ function processMountlist {
 		fi
 
 		# is server reachable?
-		if ! isPingable "${Server}"; then
+		if ! isPingable "${PrefsServer}"; then
 			_EC=$((_EC||!${?}))
 			((MountlistIndex++))
 			continue
 		fi
 
 		# create mountpoint
-		if [ ${Simulate} -eq ${NO} ] && ! createMountpoint "${MountPoint}"; then
+		if [ ${Simulate} -eq ${NO} ] && ! createMountpoint "${PrefsMountPoint}"; then
 			_EC=$((_EC||!${?}))
 			((MountlistIndex++))
 			continue
 		fi
 
-		case ${Protocol} in
+		case ${PrefsProtocol} in
 			http|https)
 				if [ ${Simulate} -eq ${YES} ]; then
-					echo "/sbin/mount_webdav -s -i${MountOptions:+ -o ${MountOptions}} ${Protocol}://${Server} ${MOUNTPOINT_APN}/${MountPoint}"
+					echo -e "${STDOUT_COLOR}/sbin/mount_webdav -s -i${PrefsMountOptions:+ -o ${PrefsMountOptions}} ${PrefsProtocol}://${PrefsServer} ${MOUNTPOINT_APN}/${PrefsMountPoint}${COLOR_OFF}"
 				else
 					_RV="$(${LAUNCHASUSER} expect -c '
-						set timeout '${MaxRetryInSeconds}'
+						set timeout '${PrefsMaxRetryInSeconds}'
 						'"${EXPECTDEBUG}"'
-						spawn /sbin/mount_webdav -s -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+						spawn /sbin/mount_webdav -s -i'"${PrefsMountOptions:+ -o ${PrefsMountOptions}}"' '"${PrefsProtocol}"'://'"${PrefsServer}"' '"${MOUNTPOINT_APN}"'/'"${PrefsMountPoint}"'
 						expect {
 							-re ".*ser.*|.*name.*" {
-								send -- "'"${Account}"'\r"
+								send -- "'"${PrefsAccount}"'\r"
 								exp_continue
 							}
 							-re ".*ssword.*" {
@@ -710,15 +723,15 @@ function processMountlist {
 				;;
 			ftp)
 				if [ ${Simulate} -eq ${YES} ]; then
-					echo "/sbin/mount_ftp -i${MountOptions:+ -o ${MountOptions}} ${Protocol}://${Server} ${MOUNTPOINT_APN}/${MountPoint}"
+					echo -e "${STDOUT_COLOR}/sbin/mount_ftp -i${PrefsMountOptions:+ -o ${PrefsMountOptions}} ${PrefsProtocol}://${PrefsServer} ${MOUNTPOINT_APN}/${PrefsMountPoint}${COLOR_OFF}"
 				else
 					_RV="$(${LAUNCHASUSER} expect -c '
-						set timeout '${MaxRetryInSeconds}'
+						set timeout '${PrefsMaxRetryInSeconds}'
 						'"${EXPECTDEBUG}"'
-						spawn /sbin/mount_ftp -i'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+						spawn /sbin/mount_ftp -i'"${PrefsMountOptions:+ -o ${PrefsMountOptions}}"' '"${PrefsProtocol}"'://'"${PrefsServer}"' '"${MOUNTPOINT_APN}"'/'"${PrefsMountPoint}"'
 						expect {
 							-re ".*ser.*|.*name.*" {
-								send -- "'"${Account}"'\r"
+								send -- "'"${PrefsAccount}"'\r"
 								exp_continue
 							}
 							-re ".*ssword.*" {
@@ -739,26 +752,26 @@ function processMountlist {
 				;;
 			nfs)
 				if [ ${Simulate} -eq ${YES} ]; then
-					echo "/sbin/mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} ${Server}://${Share} ${MOUNTPOINT_APN}/${MountPoint}"
+					echo -e "${STDOUT_COLOR}/sbin/mount -t ${PrefsProtocol}${PrefsMountOptions:+ -o ${PrefsMountOptions}} ${PrefsServer}://${PrefsShare} ${MOUNTPOINT_APN}/${PrefsMountPoint}${COLOR_OFF}"
 				else
-					_RV="$(${LAUNCHASUSER} /sbin/mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} "${Server}://${Share}" "${MOUNTPOINT_APN}/${MountPoint}" 2>&1)"
+					_RV="$(${LAUNCHASUSER} /sbin/mount -t ${PrefsProtocol}${PrefsMountOptions:+ -o ${PrefsMountOptions}} "${PrefsServer}://${PrefsShare}" "${MOUNTPOINT_APN}/${PrefsMountPoint}" 2>&1)"
 				fi
 				_RC=${?}
 				;;
 			afp)
 				if [ ${Simulate} -eq ${YES} ]; then
-					echo "/sbin/mount_afp -i -s${MountOptions:+ -o ${MountOptions}} ${Protocol}://${Server}/${Share} ${MOUNTPOINT_APN}/${MountPoint}"
+					echo -e "${STDOUT_COLOR}/sbin/mount_afp -i -s${PrefsMountOptions:+ -o ${PrefsMountOptions}} ${PrefsProtocol}://${PrefsServer}/${PrefsShare} ${MOUNTPOINT_APN}/${PrefsMountPoint}${COLOR_OFF}"
 				else
 					_RV="$(${LAUNCHASUSER} expect -c '
-						set timeout '${MaxRetryInSeconds}'
+						set timeout '${PrefsMaxRetryInSeconds}'
 						'"${EXPECTDEBUG}"'
-						spawn /sbin/mount_afp -i -s'"${MountOptions:+ -o ${MountOptions}}"' '"${Protocol}"'://'"${Server}"'/'"${Share}"' '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+						spawn /sbin/mount_afp -i -s'"${PrefsMountOptions:+ -o ${PrefsMountOptions}}"' '"${PrefsProtocol}"'://'"${PrefsServer}"'/'"${PrefsShare}"' '"${MOUNTPOINT_APN}"'/'"${PrefsMountPoint}"'
 						expect {
 							-re ".*ser.*" {
-								if {"'"${Domain}"'" == ""} {
-									send -- "'"${Account}"'\r"
+								if {"'"${PrefsDomain}"'" == ""} {
+									send -- "'"${PrefsAccount}"'\r"
 								} else {
-									send -- "'"${Domain}"';'"${Account}"'\r"
+									send -- "'"${PrefsDomain}"';'"${PrefsAccount}"'\r"
 								}
 								exp_continue
 							}
@@ -780,18 +793,18 @@ function processMountlist {
 				;;
 			smb)
 				if [ ${Simulate} -eq ${YES} ]; then
-					echo "/sbin/mount_smbfs -o soft${MountOptions:+,${MountOptions}} '//${Domain:+${Domain};}${Account}@${Server}/${Share}' ${MOUNTPOINT_APN}/${MountPoint}"
+					echo -e "${STDOUT_COLOR}/sbin/mount_smbfs -o soft${PrefsMountOptions:+,${PrefsMountOptions}} '//${PrefsDomain:+${PrefsDomain};}${PrefsAccount}@${PrefsServer}/${PrefsShare}' ${MOUNTPOINT_APN}/${PrefsMountPoint}${COLOR_OFF}"
 				else
 					_RV="$(${LAUNCHASUSER} expect -c '
-						set timeout '${MaxRetryInSeconds}'
+						set timeout '${PrefsMaxRetryInSeconds}'
 						'"${EXPECTDEBUG}"'
-						spawn /sbin/mount_smbfs -o soft'"${MountOptions:+,${MountOptions}}"' "//'"${Domain:+${Domain};}${Account}"'@'"${Server}"'/'"${Share}"'" '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+						spawn /sbin/mount_smbfs -o soft'"${PrefsMountOptions:+,${PrefsMountOptions}}"' "//'"${PrefsDomain:+${PrefsDomain};}${PrefsAccount}"'@'"${PrefsServer}"'/'"${PrefsShare}"'" '"${MOUNTPOINT_APN}"'/'"${PrefsMountPoint}"'
 						expect {
 							-re "..*ser.*|.*name.*" {
-								if {"'"${Domain}"'" == ""} {
-									send -- "'"${Account}"'\r"
+								if {"'"${PrefsDomain}"'" == ""} {
+									send -- "'"${PrefsAccount}"'\r"
 								} else {
-									send -- "'"${Domain}"';'"${Account}"'\r"
+									send -- "'"${PrefsDomain}"';'"${PrefsAccount}"'\r"
 								}
 								exp_continue
 							}
@@ -813,12 +826,12 @@ function processMountlist {
 				;;
 			cifs)
 				if [ ${Simulate} -eq ${YES} ]; then
-					echo "/sbin/mount -t ${Protocol}${MountOptions:+ -o ${MountOptions}} '//${Account}@${Server}/${Share}' ${MOUNTPOINT_APN}/${MountPoint}"
+					echo -e "${STDOUT_COLOR}/sbin/mount -t ${PrefsProtocol}${PrefsMountOptions:+ -o ${PrefsMountOptions}} '//${PrefsAccount}@${PrefsServer}/${PrefsShare}' ${MOUNTPOINT_APN}/${PrefsMountPoint}${COLOR_OFF}"
 				else
 					_RV="$(${LAUNCHASUSER} expect -c '
-						set timeout '${MaxRetryInSeconds}'
+						set timeout '${PrefsMaxRetryInSeconds}'
 						'"${EXPECTDEBUG}"'
-						spawn /sbin/mount -t '"${Protocol}"''"${MountOptions:+ -o ${MountOptions}}"' "//'"${Account}"'@'"${Server}"'/'"${Share}"'" '"${MOUNTPOINT_APN}"'/'"${MountPoint}"'
+						spawn /sbin/mount -t '"${PrefsProtocol}"''"${PrefsMountOptions:+ -o ${PrefsMountOptions}}"' "//'"${PrefsAccount}"'@'"${PrefsServer}"'/'"${PrefsShare}"'" '"${MOUNTPOINT_APN}"'/'"${PrefsMountPoint}"'
 						expect {
 							-re ".*ssword.*" {
 								send -- "'"$(getPasswordFromKeychain | convertToHexCode)"'\r"
@@ -837,17 +850,17 @@ function processMountlist {
 				_RC=${?}
 				;;
 			*)
-				log --priority=${LOG_ERROR} "Unknown protocol ${Protocol}"
+				log --priority=${LOG_ERROR} "Unknown protocol ${PrefsProtocol}"
 				((MountlistIndex++))
 				continue
 				;;
 		esac
 		if [ ${Simulate} -eq ${NO} ]; then
 			if [ ${_RC} -eq ${SUCCESS} ]; then
-				log --priority=${LOG_INFO} "${Share} mounted successfully"
+				log --priority=${LOG_INFO} "${PrefsShare} mounted successfully"
 				((SuccessfullyMountedShares++))
 			else
-				log --priority=${LOG_ERROR} "mount of ${Share} failed (RC=${_RC}, RV=${_RV})"
+				log --priority=${LOG_ERROR} "mount of ${PrefsShare} failed (RC=${_RC}, RV=${_RV})"
 			fi
 		fi
 		_EC=$((_EC||_RC))
@@ -877,21 +890,21 @@ function processMountlist {
 }
 
 function addPassword {
-	local _Account="${Account:-${LOGINNAME}}"
+	local _Account="${OptAccount:-${LOGINNAME}}"
 	local _AppAccess=""
 	local _RV=""
 	local -i RC=0
 
-	if [[ "${Protocol}" =~ ^http(s)+ ]]; then
+	if [[ "${OptProtocol}" =~ ^http(s)+ ]]; then
 		_AppAccess="-T /System/Library/Extensions/webdav_fs.kext/Contents/Resources/webdavfs_agent"
 	fi
 	_RV="$(security add-internet-password \
 		-a "${_Account}" \
-		-l "${Server}" \
-		-D "${Description:-Netzwerkpasswort}" \
+		-l "${OptServer}" \
+		-D "${OptDescription:-Netzwerkpasswort}" \
 		-j "${SCRIPTNAME}" \
 		-r "$(getKeychainProtocol)" \
-		-s "${Server}" \
+		-s "${OptServer}" \
 		-w "$(read -r -p "Password: " -s && echo "${REPLY}"; unset REPLY)" \
 		-U \
 		-T /usr/bin/security \
@@ -908,6 +921,21 @@ function addPassword {
 		log --priority=${LOG_ERROR} "error adding password to keychain. (RC=${_RC}, RV=${_RV})"
 	fi
 	exit ${_RC}
+}
+
+function setShare {
+	# process automount plist file
+	MountlistIndex=0
+	while /usr/libexec/PlistBuddy -c "Print Mountlist:${MountlistIndex}" "${AUTOMOUNTPLIST_AFN}" >/dev/null 2>&1; do
+		# get the values
+		if ! readPrefsMountlistValues ${MountlistIndex}; then
+			_EC=$((_EC||!${?}))
+			((MountlistIndex++))
+			continue
+		fi
+
+
+	done
 }
 
 function create_lock {
@@ -946,117 +974,163 @@ catchTrap 'cleanup' ${SIGHUP} ${SIGINT} ${SIGQUIT} ${SIGTERM}
 create_lock
 
 while :; do
-	case "${1}" in
+	case ${1} in
 			-h|-\?|--help) # Call a "showUsage" function to display a synopsis, then exit.
 				showUsage
 				exit
 				;;
 			-o|--domain)
 				if [[ -n "${2}" && "${2:0:2}" != "--" && "${2:0:1}" != "-" ]]; then
-					Domain="${2}"
+					OptDomain="${2}"
 					shift
 				else
-					printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+					printf "${STDERR_COLOR}"'ERROR: "%s" requires a non-empty option argument.\n'"${COLOR_OFF}" "${1}" >&2
 					exit 1
 				fi
 				;;
 			--domain=?*)
-				Domain=${1#*=} # Delete everything up to "=" and assign the remainder.
+				OptDomain=${1#*=} # Delete everything up to "=" and assign the remainder.
 				;;
 			--domain=) # Handle the case of an empty --domain=
-				printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+				printf "${STDERR_COLOR}"'ERROR: "%s" requires a non-empty option argument.\n'"${COLOR_OFF}" "${1}" >&2
 				exit 1
 				;;
 			-a|--account)
 				if [[ -n "${2}" && "${2:0:2}" != "--" && "${2:0:1}" != "-" ]]; then
-					Account="${2}"
+					OptAccount="${2}"
 					shift
 				else
-					printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+					printf "${STDERR_COLOR}"'ERROR: "%s" requires a non-empty option argument.\n'"${COLOR_OFF}" "${1}" >&2
 					exit 1
 				fi
 				;;
 			--account=?*)
-				Account=${1#*=} # Delete everything up to "=" and assign the remainder.
+				OptAccount=${1#*=} # Delete everything up to "=" and assign the remainder.
 				;;
 			--account=) # Handle the case of an empty --account=
-				printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+				printf "${STDERR_COLOR}"'ERROR: "%s" requires a non-empty option argument.\n'"${COLOR_OFF}" "${1}" >&2
 				exit 1
 				;;
 			-d|--description)
 				if [[ -n "${2}" && "${2:0:2}" != "--" && "${2:0:1}" != "-" ]]; then
-					Description="${2}"
+					OptDescription="${2}"
 					shift
 				else
-					printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+					printf "${STDERR_COLOR}"'ERROR: "%s" requires a non-empty option argument.\n'"${COLOR_OFF}" "${1}" >&2
 					exit 1
 				fi
 				;;
 			--description=?*)
-				Description=${1#*=}
+				OptDescription=${1#*=}
 				;;
 			--description=)
-				printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+				printf "${STDERR_COLOR}"'ERROR: "%s" requires a non-empty option argument.\n'"${COLOR_OFF}" "${1}" >&2
+				exit 1
+				;;
+			-h|--share)
+				if [[ -n "${2}" && "${2:0:2}" != "--" && "${2:0:1}" != "-" ]]; then
+					OptShare="${2}"
+					shift
+				else
+					printf "${STDERR_COLOR}"'ERROR: "%s" requires a non-empty option argument.\n'"${COLOR_OFF}" "${1}" >&2
+					exit 1
+				fi
+				;;
+			--share=?*)
+				OptShare=${1#*=}
+				;;
+			--share=)
+				printf "${STDERR_COLOR}"'ERROR: "%s" requires a non-empty option argument.\n'"${COLOR_OFF}" "${1}" >&2
+				exit 1
+				;;
+			-n|--name)
+				if [[ -n "${2}" && "${2:0:2}" != "--" && "${2:0:1}" != "-" ]]; then
+					OptMountName="${2}"
+					shift
+				else
+					printf "${STDERR_COLOR}"'ERROR: "%s" requires a non-empty option argument.\n'"${COLOR_OFF}" "${1}" >&2
+					exit 1
+				fi
+				;;
+			--name=?*)
+				OptMountName=${1#*=}
+				;;
+			--name=)
+				printf "${STDERR_COLOR}"'ERROR: "%s" requires a non-empty option argument.\n'"${COLOR_OFF}" "${1}" >&2
+				exit 1
+				;;
+			-m|--mountpoint)
+				if [[ -n "${2}" && "${2:0:2}" != "--" && "${2:0:1}" != "-" ]]; then
+					OptMountpoint="${2}"
+					shift
+				else
+					printf "${STDERR_COLOR}"'ERROR: "%s" requires a non-empty option argument.\n'"${COLOR_OFF}" "${1}" >&2
+					exit 1
+				fi
+				;;
+			--mountpoint=?*)
+				OptMountpoint=${1#*=}
+				;;
+			--mountpoint=)
+				printf "${STDERR_COLOR}"'ERROR: "%s" requires a non-empty option argument.\n'"${COLOR_OFF}" "${1}" >&2
 				exit 1
 				;;
 			-p|--protocol)
 				if [[ -n "${2}" && "${2:0:2}" != "--" && "${2:0:1}" != "-" ]]; then
-					Protocol="${2}"
+					OptProtocol="${2}"
 					shift
 				else
-					printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+					printf "${STDERR_COLOR}"'ERROR: "%s" requires a non-empty option argument.\n'"${COLOR_OFF}" "${1}" >&2
 					exit 1
 				fi
 				;;
 			--protocol=?*)
-				Protocol=${1#*=}
+				OptProtocol=${1#*=}
 				;;
 			--protocol=)
-				printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+				printf "${STDERR_COLOR}"'ERROR: "%s" requires a non-empty option argument.\n'"${COLOR_OFF}" "${1}" >&2
 				exit 1
 				;;
 			-s|--server)
 				if [[ -n "${2}" && "${2:0:2}" != "--" && "${2:0:1}" != "-" ]]; then
-					Server="${2}"
+					OptServer="${2}"
 					shift
 				else
-					printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+					printf "${STDERR_COLOR}"'ERROR: "%s" requires a non-empty option argument.\n'"${COLOR_OFF}" "${1}" >&2
 					exit 1
 				fi
 				;;
 			--server=?*)
-				Server=${1#*=}
+				OptServer=${1#*=}
 				;;
 			--server=)
-				printf 'ERROR: "%s" requires a non-empty option argument.\n' "${1}" >&2
+				printf "${STDERR_COLOR}"'ERROR: "%s" requires a non-empty option argument.\n'"${COLOR_OFF}" "${1}" >&2
 				exit 1
 				;;
 			--addpassword)
 				Action="addPassword"
 				;;
-			--addshare)
-				Action="addShare"
-				;;
-			--modifyshare)
-				Action="modifyShare"
+			--setshare)
+				Action="setShare"
 				;;
 			--deleteshare)
+				: # TODO
 				Action="deleteShare"
 				;;
 			-l|--list)
 				Action="listMountlist"
 				;;
-			-n|--simulate)
+			--simulate)
 				Simulate=${YES}
 				;;
-			-m|--mountall)
+			--mountall)
 				Action="processMountlist"
 				;;
 			-v|--verbose)
 				((Verbose++))
 				;;
 			-V|--version)
-				printf '%s V%s (%s)\n' "${SCRIPT_FN}" "${SCRIPTVERSION}" "${SCRIPTLASTMOD}"
+				printf "${STDOUT_COLOR}"'%s V%s (%s)\n' "${SCRIPT_FN}" "${SCRIPTVERSION}" "${SCRIPTLASTMOD}"
 				exit 0
 				;;
 			--) # End of all options.
@@ -1064,7 +1138,7 @@ while :; do
 				break
 				;;
 			-?*)
-				printf 'WARN: Unknown option (ignored): %s\n' "${1}" >&2
+				printf "${STDERR_COLOR}"'WARN: Unknown option (ignored): %s\n'"${COLOR_OFF}" "${1}" >&2
 				;;
 			*) # Default case: If no more options then break out of the loop.
 				break
@@ -1085,14 +1159,14 @@ case "${Action}" in
 		exit ${RC}
 		;;
 	addPassword)
-		if [[ -z "${Protocol}" || -z "${Server}" ]]; then
+		if [[ -z "${OptProtocol}" || -z "${OptServer}" ]]; then
 			showUsage
 			exit
 		fi
 		${Action}
 		;;
-	addShare)
-		if [[ -z "${Protocol}" || -z "${Server}" || -z "${Share}" ]]; then
+	setShare)
+		if [[ -z "${OptMountName}" || -z "${OptProtocol}" || -z "${OptServer}" || -z "${OptShare}" ]]; then
 			showUsage
 			exit
 		fi
