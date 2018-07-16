@@ -657,9 +657,7 @@ function processMountlist {
 							timeout {
 								exit 1
 							}
-							eof {
-								return
-							}
+							eof
 						}
 						catch wait result
 						exit [lindex $result 3]
@@ -684,9 +682,7 @@ function processMountlist {
 								send -- "'$(getPasswordFromKeychain | convertToHexCode)'\r"
 								exp_continue
 							}
-							eof {
-								return
-							}
+							eof
 							timeout {
 								exit 1
 							}
@@ -728,9 +724,7 @@ function processMountlist {
 							timeout {
 								exit 1
 							}
-							eof {
-								return
-							}
+							eof
 						}
 						catch wait result
 						exit [lindex $result 3]' 2>&1)"
@@ -761,9 +755,7 @@ function processMountlist {
 							timeout {
 								exit 1
 							}
-							eof {
-								return
-							}
+							eof
 						}
 						catch wait result
 						exit [lindex $result 3]' 2>&1)"
@@ -786,9 +778,7 @@ function processMountlist {
 							timeout {
 								exit 1
 							}
-							eof {
-								return
-							}
+							eof
 						}
 						catch wait result
 						exit [lindex $result 3]' 2>&1)"
