@@ -446,9 +446,9 @@ function getKeychainProtocol {
 }
 
 function convertToHexCode {
-    tr -d '\n' |\
-    od -A n -t x1 |\
-    sed -E 's/^ */  /;s/ *$//;s/  /\\x/g'
+    tr -d '\n' \
+        | xxd -pu \
+        | sed -E 's/(.{2})/\\x\1/g'
 }
 
 function getPasswordFromKeychain {
